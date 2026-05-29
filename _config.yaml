@@ -2,14 +2,14 @@
 # ОСНОВНЫЕ НАСТРОЙКИ САЙТА
 # ======================
 
-title: andrei-ag :: code execution & antivirus internals
-description: Эмуляция кода, анализаторы, антивирусные технологии и низкоуровневое программирование
-author: andrei-ag
-lang: ru
+title: "andrei-ag :: code execution & antivirus internals"
+description: "Эмуляция кода, анализаторы, антивирусные технологии и низкоуровневое программирование"
+author: "andrei-ag"
+lang: "ru"
 
 baseurl: ""
 url: ""
-github_username: andrei-ag
+github_username: "andrei-ag"
 
 # ======================
 # НАСТРОЙКИ МНОГОЯЗЫЧНОСТИ
@@ -22,38 +22,35 @@ default_lang: "ru"
 # ПАРАМЕТРЫ Jekyll
 # ======================
 
-remote_theme: pages-themes/hacker@v0.2.0
+remote_theme: "pages-themes/hacker@v0.2.0"
 
 plugins:
-  - jekyll-remote-theme
-  - jekyll-seo-tag
-  - jekyll-sitemap
+  - "jekyll-remote-theme"
+  - "jekyll-seo-tag"
+  - "jekyll-sitemap"
 
 # ======================
 # НАСТРОЙКИ ОТОБРАЖЕНИЯ
 # ======================
 
-permalink: /:categories/:year/:month/:day/:title:output_ext
-timezone: Europe/Moscow
+permalink: "/:categories/:year/:month/:day/:title:output_ext"
+timezone: "Europe/Moscow"
 
 exclude:
-  - Gemfile
-  - Gemfile.lock
-  - vendor/
-  - README.md
-  - .gitignore
-  - .github/
+  - "Gemfile"
+  - "Gemfile.lock"
+  - "vendor/"
+  - "README.md"
+  - ".gitignore"
+  - ".github/"
 
-markdown: kramdown
+markdown: "kramdown"
 kramdown:
-  input: GFM
+  input: "GFM"
   auto_ids: true
-  syntax_highlighter: rouge
+  syntax_highlighter: "rouge"
 
-highlighter: rouge
-kramdown:
-  input: GFM
-  syntax_highlighter: rouge
+highlighter: "rouge"
 
 # ======================
 # НАВИГАЦИЯ (МЕНЮ)
@@ -62,23 +59,23 @@ kramdown:
 navigation:
   - title: "Главная"
     url: "/"
-    lang: ru
+    lang: "ru"
   - title: "О блоге"
     url: "/about"
-    lang: ru
+    lang: "ru"
   - title: "Контакты"
     url: "/contacts"
-    lang: ru
+    lang: "ru"
 
   - title: "Home"
     url: "/"
-    lang: en
+    lang: "en"
   - title: "About"
     url: "/about"
-    lang: en
+    lang: "en"
   - title: "Contacts"
     url: "/contacts"
-    lang: en
+    lang: "en"
 
 # ======================
 # ДОПОЛНИТЕЛЬНО

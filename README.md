@@ -6,10 +6,10 @@ Technical blog about low-level programming, code emulation, and antivirus techno
 
 To run this blog locally:
 
-```bash
+```
 bundle install
 bundle exec jekyll serve
-```bash
+```
 
 ## Content
 
