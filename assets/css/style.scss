@@ -1,0 +1,43 @@
+---
+---
+
+@import "{{ site.theme }}";
+
+/* Стили для блоков кода с ассемблером */
+.highlight {
+  background: #0a0a0a;
+  border: 1px solid #00ff00;
+  border-radius: 4px;
+  padding: 10px;
+}
+
+.highlight .c1 { color: #00aa00; font-style: italic; }  /* комментарии */
+.highlight .nb { color: #ffff00; }                      /* директивы .data, .code */
+.highlight .k { color: #ffaa00; }                       /* инструкции mov, add, call */
+.highlight .mh { color: #ff88ff; }                      /* hex-числа 0E8h */
+.highlight .mi { color: #ff88ff; }                      /* десятичные числа */
+.highlight .sr { color: #ff8888; }                      /* строки */
+.highlight .nv { color: #88ff88; }                      /* переменные */
+
+/* Метки (labels) */
+.highlight .nl {
+  color: #88ffff;
+  font-weight: bold;
+}
+
+/* Номера строк (если включены) */
+.lineno {
+  color: #00aa00;
+  background: #0a2a0a;
+  padding-right: 10px;
+}
+
+/* Дополнительно: подсветка регистров */
+.highlight .vg {
+  color: #ffaa88;
+}
+
+/* Адреса (0040E000h) */
+.highlight .mh {
+  color: #ff88ff;
+}

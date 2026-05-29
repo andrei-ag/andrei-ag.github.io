@@ -1,0 +1,88 @@
+# ======================
+# ОСНОВНЫЕ НАСТРОЙКИ САЙТА
+# ======================
+
+title: andrei-ag :: code execution & antivirus internals
+description: Эмуляция кода, анализаторы, антивирусные технологии и низкоуровневое программирование
+author: andrei-ag
+lang: ru
+
+baseurl: ""
+url: ""
+github_username: andrei-ag
+
+# ======================
+# НАСТРОЙКИ МНОГОЯЗЫЧНОСТИ
+# ======================
+
+languages: ["ru", "en"]
+default_lang: "ru"
+
+# ======================
+# ПАРАМЕТРЫ Jekyll
+# ======================
+
+remote_theme: pages-themes/hacker@v0.2.0
+
+plugins:
+  - jekyll-remote-theme
+  - jekyll-seo-tag
+  - jekyll-sitemap
+
+# ======================
+# НАСТРОЙКИ ОТОБРАЖЕНИЯ
+# ======================
+
+permalink: /:categories/:year/:month/:day/:title:output_ext
+timezone: Europe/Moscow
+
+exclude:
+  - Gemfile
+  - Gemfile.lock
+  - vendor/
+  - README.md
+  - .gitignore
+  - .github/
+
+markdown: kramdown
+kramdown:
+  input: GFM
+  auto_ids: true
+  syntax_highlighter: rouge
+
+highlighter: rouge
+kramdown:
+  input: GFM
+  syntax_highlighter: rouge
+
+# ======================
+# НАВИГАЦИЯ (МЕНЮ)
+# ======================
+
+navigation:
+  - title: "Главная"
+    url: "/"
+    lang: ru
+  - title: "О блоге"
+    url: "/about"
+    lang: ru
+  - title: "Контакты"
+    url: "/contacts"
+    lang: ru
+
+  - title: "Home"
+    url: "/"
+    lang: en
+  - title: "About"
+    url: "/about"
+    lang: en
+  - title: "Contacts"
+    url: "/contacts"
+    lang: en
+
+# ======================
+# ДОПОЛНИТЕЛЬНО
+# ======================
+
+github:
+  is_project_page: false
