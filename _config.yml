@@ -3,38 +3,148 @@
 # ======================
 
 title: "andrei-ag :: code execution & antivirus internals"
+title_separator: "|"
 description: "Эмуляция кода, анализаторы, антивирусные технологии и низкоуровневое программирование"
-author: "andrei-ag"
-lang: "ru"
+author: "Andrei Agafonov"
 
-baseurl: ""
-url: ""
-github_username: "andrei-ag"
+# Подключаем тему Minimal Mistakes
+remote_theme: "mmistakes/minimal-mistakes@4.26.2"
 
 # ======================
 # НАСТРОЙКИ МНОГОЯЗЫЧНОСТИ
 # ======================
 
-languages: ["ru", "en"]
-default_lang: "ru"
+# Основной язык интерфейса (будет использоваться по умолчанию)
+locale: "ru"
+
+# Поддерживаемые языки контента
+# Для создания статьи на английском используйте lang: en в frontmatter
+lang:
+  - "ru"
+  - "en"
 
 # ======================
-# ПАРАМЕТРЫ Jekyll
+# ПЛАГИНЫ MINIMAL MISTAKES
 # ======================
-
-remote_theme: "pages-themes/hacker@v0.2.0"
 
 plugins:
-  - "jekyll-remote-theme"
-  - "jekyll-seo-tag"
+  - "jekyll-paginate"
   - "jekyll-sitemap"
+  - "jekyll-gist"
+  - "jekyll-feed"
+  - "jekyll-include-cache"
+  - "jekyll-redirect-from"
 
 # ======================
 # НАСТРОЙКИ ОТОБРАЖЕНИЯ
 # ======================
 
-permalink: "/:categories/:year/:month/:day/:title:output_ext"
+permalink: "/:year/:month/:day/:title/"
 timezone: "Europe/Moscow"
+
+# Пагинация (обязательно для Minimal Mistakes)
+paginate: 10
+paginate_path: "/page:num/"
+
+# Оглавление (TOC) для постов
+toc: true
+toc_sticky: true
+toc_icon: "file-alt"
+
+# Время чтения
+read_time: true
+words_per_minute: 200
+
+# Комментарии (пока отключены)
+comments: false
+
+# ======================
+# ВИЗУАЛЬНЫЕ НАСТРОЙКИ
+# ======================
+
+# Скин темы (внешний вид):
+# "default", "air", "aqua", "contrast", "dark", "dirt", "neon", "mint", "plum", "sunrise"
+minimal_mistakes_skin: "default"
+
+# Аватар автора
+# Положите файл в assets/images/avatar.png
+author:
+  name: "Andrei Agafonov"
+  avatar: "/assets/images/avatar.png"
+  bio: "Исследователь антивирусных технологий, эмуляция кода, низкоуровневое программирование"
+  location: "Russia"
+  links:
+    - label: "GitHub"
+      icon: "fab fa-fw fa-github"
+      url: "https://github.com/andrei-ag"
+
+# Футер
+footer:
+  links:
+    - label: "GitHub"
+      icon: "fab fa-fw fa-github"
+      url: "https://github.com/andrei-ag"
+
+# ======================
+# ПОИСК
+# ======================
+
+# Поиск через Lunr (работает без дополнительных сервисов)
+search: true
+search_full_content: true
+
+# ======================
+# АНАЛИТИКА (ОПЦИОНАЛЬНО)
+# ======================
+
+# google_analytics: "UA-XXXXXXXXX-X"
+# ga_tracking_id: "UA-XXXXXXXXX-X"
+
+# ======================
+# НАВИГАЦИЯ (МЕНЮ) - Minimal Mistakes Style
+# ======================
+
+# Основное меню
+main:
+  - title: "Главная"
+    url: "/"
+  - title: "Статьи"
+    url: "/posts/"
+  - title: "Контакты"
+    url: "/contacts/"
+  - title: "О блоге"
+    url: "/about/"
+
+
+# Social links (будут добавлены в футер)
+social:
+  type: "Person"
+  name: "Andrei Agafonov"
+  links:
+    - "https://github.com/andrei-ag"
+
+# ======================
+# ПАРАМЕТРЫ Jekyll
+# ======================
+
+markdown: "kramdown"
+kramdown:
+  input: "GFM"
+  auto_ids: true
+  syntax_highlighter: "rouge"
+  syntax_highlighter_opts:
+    css_class: "highlight"
+    span:
+      line_numbers: false
+    block:
+      line_numbers: false
+      start_line: 1
+
+highlighter: "rouge"
+
+# ======================
+# ИСКЛЮЧЕНИЯ
+# ======================
 
 exclude:
   - "Gemfile"
@@ -43,43 +153,81 @@ exclude:
   - "README.md"
   - ".gitignore"
   - ".github/"
-
-markdown: "kramdown"
-kramdown:
-  input: "GFM"
-  auto_ids: true
-  syntax_highlighter: "rouge"
-
-highlighter: "rouge"
+  - "tools/"
+  - "docs/"
+  - "*.sh"
 
 # ======================
-# НАВИГАЦИЯ (МЕНЮ)
+# НАСТРОЙКИ ДЛЯ SEO
 # ======================
 
-navigation:
-  - title: "Главная"
-    url: "/"
-    lang: "ru"
-  - title: "О блоге"
-    url: "/about"
-    lang: "ru"
-  - title: "Контакты"
-    url: "/contacts"
-    lang: "ru"
-
-  - title: "Home"
-    url: "/"
-    lang: "en"
-  - title: "About"
-    url: "/about"
-    lang: "en"
-  - title: "Contacts"
-    url: "/contacts"
-    lang: "en"
+# Адрес сайта (замените после деплоя)
+url: ""  # https://andrei-ag.github.io
+baseurl: ""
 
 # ======================
-# ДОПОЛНИТЕЛЬНО
+# КОЛЛЕКЦИИ
 # ======================
 
-github:
-  is_project_page: false
+collections:
+  posts:
+    output: true
+    permalink: /:categories/:title/
+
+# ======================
+# DEFAULT FRONT MATTER
+# ======================
+
+defaults:
+  # Настройки для всех страниц
+  - scope:
+      path: ""
+    values:
+      layout: "single"
+      lang: "ru"
+      comments: false
+      share: false
+  
+  # Настройки для постов
+  - scope:
+      path: "_posts"
+      type: "posts"
+    values:
+      layout: "single"
+      toc: true
+      toc_sticky: true
+      read_time: true
+  
+  # Настройки для страниц о блоге и контактах
+  - scope:
+      path: "about"
+    values:
+      layout: "single"
+      permalink: "/about/"
+  
+  - scope:
+      path: "contacts"
+    values:
+      layout: "single"
+      permalink: "/contacts/"
+
+# ======================
+# КАТЕГОРИИ И ТЕГИ
+# ======================
+
+category_archive:
+  type: "liquid"
+  path: "/categories/"
+
+tag_archive:
+  type: "liquid"
+  path: "/tags/"
+
+# ======================
+# ОТКЛЮЧАЕМ СТАРЫЕ НАСТРОЙКИ
+# ======================
+
+# navigation - удалено (заменено на nav_main)
+# languages - удалено (используйте lang в frontmatter)
+# github.is_project_page - удалено
+# github_username - удалено

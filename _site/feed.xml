@@ -1,0 +1,1478 @@
+<?xml version="1.0" encoding="utf-8"?><feed xmlns="http://www.w3.org/2005/Atom" xml:lang="ruen"><generator uri="https://jekyllrb.com/" version="3.10.0">Jekyll</generator><link href="http://localhost:4000/feed.xml" rel="self" type="application/atom+xml" /><link href="http://localhost:4000/" rel="alternate" type="text/html" hreflang="ruen" /><updated>2026-05-29T16:36:00+03:00</updated><id>http://localhost:4000/feed.xml</id><title type="html">andrei-ag :: code execution &amp;amp; antivirus internals</title><subtitle>Эмуляция кода, анализаторы, антивирусные технологии и низкоуровневое программирование</subtitle><author><name>Andrei Agafonov</name></author><entry xml:lang="ru"><title type="html">Уязвимости эмуляторов кода</title><link href="http://localhost:4000/antivirus/emulation/assembly/antivirus-anti-emulation-tricks/" rel="alternate" type="text/html" title="Уязвимости эмуляторов кода" /><published>2004-04-06T00:00:00+03:00</published><updated>2004-04-06T00:00:00+03:00</updated><id>http://localhost:4000/antivirus/emulation/assembly/antivirus-anti-emulation-tricks</id><content type="html" xml:base="http://localhost:4000/antivirus/emulation/assembly/antivirus-anti-emulation-tricks/"><![CDATA[<h3 id="1-вступление">1. Вступление</h3>
+<p>Генераторы полиморфных шифровщиков/расшифровщиков очень часто используются для защиты исполняемых файлов (полностью либо частично) и во многих компьютерных вирусах. Для того, что бы усложнить процесс создания утилит, предназначенных для автоматического снятия защит такого рода, и обнаружения вирусов используются различные алгоритмы, называемые <em>анти-эмуляционными трюками</em>. Этим алгоритмам и будет посвящена данная статья.</p>
+
+<p>Тестирование трюков будет производиться на антивирусных программах, которые, бесспорно, содержат самые совершенные реализации эмуляторов кода. Таким образом, мы оценим качество эмуляторов следующих антивирусов:</p>
+<ol>
+  <li><a href="http://www.pandasoftware.com">Panda</a> AntiVirus Titanium 2004</li>
+  <li><a href="http://www.symantec.com">Norton</a> Antivirus 2004</li>
+  <li><a href="http://www.proantivirus.com">Stop</a>! Scanner 5.0</li>
+  <li><a href="http://www.drweb.ru">Dr. Web</a> 4.30a</li>
+  <li><a href="http://www.avp.ru">Kaspersky</a> Anti-virus (AVP) v3.5.133.0</li>
+</ol>
+
+<h3 id="2-несколько-слов-о-процедурах-эмуляции-кода">2. Несколько слов о процедурах эмуляции кода</h3>
+
+<p>В том случае, если алгоритм расшифровки данных присутствует в файле, единственным способом автоматической расшифровки является эмуляция. Процесс эмуляции может быть выполнен двумя способами:</p>
+<ol>
+  <li>Трассировка программы, т.е. ее загрузка в память и исполнение путем использования отладочного прерывания.</li>
+  <li>Кусок кода “нуждающийся в эмуляции” читается в буфер, разбирается на инструкции и с помощью различных трюков    имитируется исполнение инструкций кода.</li>
+</ol>
+
+<p><strong>Первый способ</strong> в “чистом виде” использовать достаточно опасно, к тому же процесс трассировки обнаружить и “обломать” не составляет особого труда. Если использовать <strong>второй способ</strong>, то процесс эмуляции программы будет занимать достаточно большой промежуток времени и разработка стабильно работающей версии займет “века”. Именно по этому используют комбинацию двух вышеописанных способов.</p>
+
+<p>Конечно же, есть “вещи” имитацию которых реализовать достаточно тяжело (почти невозможно). Имея небольшой опыт в разработке эмуляторов кода, я могу предположить, какие области являются наиболее сложными и могут быть реализованы с ошибками или вообще не реализованы. Но чтобы знать наверняка, проверим предположения на практике.</p>
+
+<h3 id="3-шах-и-мат-в-две-инструкции">3. Шах и мат в две инструкции</h3>
+
+<p>Перед процессом эмуляции, исследуемая программа читается в буфер, и для “опасных” (подозрительных) участков кода эмулятор производит полную имитацию выполнения, “безопасные” же инструкции или участки кода запускаются “напрямую”. Все это означает, что местоположение эмулируемой программы в памяти изменяется. Таким образом, можно попытаться запутать эмулятор, если определить текущее местоположение и:</p>
+<ol>
+  <li>сравнить с тем, которое должно быть</li>
+  <li>использовать полученное смещение для расчета одного из параметров, участвующих в расшифровке (ключ, размер    зашифрованных данных и т.д.)</li>
+</ol>
+
+<p>Если Вы решили использовать <strong>первый вариант</strong>, в случае не совпадения положения кода, можно направить эмулятор по “ложному следу”. Но такой конструкции (алгоритма вычисления смещения и сравнения его с оригинальным) будет достаточно, чтобы считать ее сигнатурой свойственной данному типу расшифровщика. Таким образом, анализатор кода, использующийся в эмуляторе обнаружит эту конструкцию и использует специальный прием для “правильной” эмуляции участка.</p>
+
+<p><strong>Второй вариант</strong> можно рассмотреть подробнее и проще будет сделать это “на практике”. Так как писать специальную утилиту для тестов мне лень, понадобится следующее:</p>
+<ol>
+  <li>отладчик и шестнадцатеричный редактор.</li>
+  <li>программа, зараженная полиморфным вирусом <a href="https://web.archive.org/web/20040812094633/http://www.estav.ru/news/2004_01_17.htm">win32/parite (штамм b)</a>.</li>
+</ol>
+
+<p>Загрузим инфицированный файл в отладчик и рассмотрим процедуру расшифровки вирусного кода:</p>
+<div class="language-nasm highlighter-rouge"><div class="highlight"><pre class="highlight"><code> <span class="err">0040</span><span class="nf">E000</span> <span class="nv">start</span><span class="p">:</span>          <span class="nv">nop</span>
+ <span class="err">0040</span><span class="nf">E001</span>                 <span class="nv">push</span>    <span class="mh">3786Fh</span>              <span class="c1">; ecx - ключ необходимый для расшифровки</span>
+ <span class="err">0040</span><span class="nf">E006</span>                 <span class="nv">pop</span>     <span class="nb">ecx</span>
+ <span class="err">0040</span><span class="nf">E007</span>                 <span class="nv">nop</span>
+ <span class="err">0040</span><span class="nf">E008</span>                 <span class="nv">nop</span>
+ <span class="err">0040</span><span class="nf">E009</span>                 <span class="nv">mov</span>     <span class="nb">esi</span><span class="p">,</span> <span class="nv">offset</span> <span class="nv">crypted_code</span><span class="o">-</span><span class="mi">4</span>
+ <span class="err">0040</span><span class="nf">E00E</span>                 <span class="nv">nop</span>
+ <span class="err">0040</span><span class="nf">E00F</span>                 <span class="nv">mov</span>     <span class="nb">edx</span><span class="p">,</span> <span class="mh">598h</span>
+ <span class="err">0040</span><span class="nf">E014</span>                 <span class="nv">nop</span>
+ <span class="err">0040</span><span class="nf">E015</span> <span class="nv">decrypt_loop</span><span class="p">:</span>   <span class="nv">push</span>    <span class="kt">dword</span> <span class="nv">ptr</span> <span class="p">[</span><span class="nb">edx</span><span class="o">+</span><span class="nb">esi</span><span class="p">]</span>
+ <span class="err">0040</span><span class="nf">E018</span>                 <span class="nv">xor</span>     <span class="p">[</span><span class="nb">esp</span><span class="p">],</span> <span class="nb">ecx</span>
+ <span class="err">0040</span><span class="nf">E01B</span>                 <span class="nv">pop</span>     <span class="kt">dword</span> <span class="nv">ptr</span> <span class="p">[</span><span class="nb">edx</span><span class="o">+</span><span class="nb">esi</span><span class="p">]</span>
+ <span class="err">0040</span><span class="nf">E01E</span>                 <span class="nv">nop</span>
+ <span class="err">0040</span><span class="nf">E01F</span>                 <span class="nv">sub</span>     <span class="nb">edx</span><span class="p">,</span> <span class="mi">2</span>
+ <span class="err">0040</span><span class="nf">E022</span>                 <span class="nv">sub</span>     <span class="nb">edx</span><span class="p">,</span> <span class="mi">2</span>
+ <span class="err">0040</span><span class="nf">E025</span>                 <span class="nv">nop</span>
+ <span class="err">0040</span><span class="nf">E026</span>                 <span class="nv">jnz</span>     <span class="nv">short</span> <span class="nv">decrypt_loop</span>
+ <span class="err">0040</span><span class="nf">E028</span> <span class="nv">crypted_code</span><span class="p">:</span>
+</code></pre></div></div>
+<p>После небольших изменений, расшифровщик вирусного кода будет выглядеть следующим образом:</p>
+<div class="language-nasm highlighter-rouge"><div class="highlight"><pre class="highlight"><code> <span class="err">0040</span><span class="nf">E000</span> <span class="nv">start</span><span class="p">:</span>          <span class="nv">call</span>    <span class="kc">$</span><span class="o">+</span><span class="mi">5</span>
+ <span class="err">0040</span><span class="nf">E005</span>                 <span class="nv">pop</span>     <span class="nb">ecx</span>                      <span class="c1">; ecx = 40E005h</span>
+ <span class="err">0040</span><span class="nf">E006</span>                 <span class="nv">sub</span>     <span class="nb">ecx</span><span class="p">,</span> <span class="mh">3D6796h</span>             <span class="c1">; 40E005h - 3D6796h = 3786F</span>
+ <span class="err">0040</span><span class="nf">E00C</span>                 <span class="nv">mov</span>     <span class="nb">esi</span><span class="p">,</span> <span class="nv">offset</span> <span class="nv">crypted_code</span><span class="o">-</span><span class="mi">4</span>
+ <span class="err">0040</span><span class="nf">E011</span>                 <span class="nv">mov</span>     <span class="nb">edx</span><span class="p">,</span> <span class="mh">598h</span>
+ <span class="err">0040</span><span class="nf">E016</span> <span class="nv">decrypt_loop</span><span class="p">:</span>   <span class="nv">push</span>    <span class="kt">dword</span> <span class="nv">ptr</span> <span class="p">[</span><span class="nb">edx</span><span class="o">+</span><span class="nb">esi</span><span class="p">]</span>
+ <span class="err">0040</span><span class="nf">E019</span>                 <span class="nv">xor</span>     <span class="p">[</span><span class="nb">esp</span><span class="p">],</span> <span class="nb">ecx</span>
+ <span class="err">0040</span><span class="nf">E01C</span>                 <span class="nv">pop</span>     <span class="kt">dword</span> <span class="nv">ptr</span> <span class="p">[</span><span class="nb">edx</span><span class="o">+</span><span class="nb">esi</span><span class="p">]</span>
+ <span class="err">0040</span><span class="nf">E01F</span>                 <span class="nv">sub</span>     <span class="nb">edx</span><span class="p">,</span> <span class="mi">2</span>
+ <span class="err">0040</span><span class="nf">E022</span>                 <span class="nv">sub</span>     <span class="nb">edx</span><span class="p">,</span> <span class="mi">2</span>
+ <span class="err">0040</span><span class="nf">E025</span>                 <span class="nv">nop</span>
+ <span class="err">0040</span><span class="nf">E026</span>                 <span class="nv">jnz</span>     <span class="nv">short</span> <span class="nv">decrypt_loop</span>
+ <span class="err">0040</span><span class="nf">E028</span> <span class="nv">crypted_code</span><span class="p">:</span>
+</code></pre></div></div>
+<p>Я думаю, суть изменений Вам понятна, ну а если нет, то я немного поясню.<br />
+Для расчета ключа (в данном случае он содержится в регистре <strong>ECX</strong>) будет использоваться текущее местоположение кода в памяти. В том случае, если оно будет отличаться от оригинала, вирусный код будет расшифрован неправильно и антивирус не обнаружит сигнатуру свойственную данному или любому другому вирусу.</p>
+
+<p>Но в том случае, если анализатор кода не обнаружит наличие конкретного вируса, в дело вступает эвристический анализатор. Если будут обнаружены особенности строения, свойственные исполняемым файлам, зараженным вирусами (например, если точка входа находится в последней секции и секция имеет атрибуты, позволяющие “запись”), эвристический анализатор может выдать подозрение о наличии в файле <strong>Win32</strong> - вируса. Но это нас не должно волновать, мы же тестируем эмуляторы.</p>
+
+<p>Проведенное тестирование показало, что обмануть не получается только эмуляторы антивирусов <strong>Doctor Web</strong> и <strong>NAV</strong>, остальные молчат как партизаны.</p>
+
+<h3 id="4-история-с-продолжением">4. История с продолжением</h3>
+
+<p>Ходит слух, что начальное значение регистра <strong>EAX</strong>, при загрузке всех win32 программ одинаковое. Этим значением является местоположение точки входа, в памяти. Я не проверял достоверность этой информации во всех версиях Windows, так что утверждать со 100% гарантией, насчет правдивости данной информации не могу. Но, так же, я не встречался со случаями, когда данное утверждение было неверным.</p>
+
+<p>Видоизменим расшифровщик вирусного кода, чтобы он принял следующий вид:</p>
+
+<div class="language-nasm highlighter-rouge"><div class="highlight"><pre class="highlight"><code> <span class="err">0040</span><span class="nf">E000</span> <span class="nv">start</span><span class="p">:</span>          <span class="nv">sub</span>     <span class="nb">eax</span><span class="p">,</span> <span class="mh">3D6791h</span>      <span class="c1">; 40E000 - 3D6791 = 3786F</span>
+ <span class="err">0040</span><span class="nf">E006</span>                 <span class="nv">mov</span>     <span class="nb">ecx</span><span class="p">,</span> <span class="nb">eax</span>
+ <span class="err">0040</span><span class="nf">E008</span>                 <span class="nv">nop</span>
+ <span class="err">0040</span><span class="nf">E009</span>                 <span class="nv">nop</span>
+ <span class="err">0040</span><span class="nf">E00A</span>                 <span class="nv">nop</span>
+ <span class="err">0040</span><span class="nf">E00B</span>                 <span class="nv">nop</span>
+ <span class="err">0040</span><span class="nf">E00C</span>                 <span class="nv">mov</span>     <span class="nb">esi</span><span class="p">,</span> <span class="nv">crypted_code</span><span class="o">-</span><span class="mi">4</span>
+ <span class="err">0040</span><span class="nf">E011</span>                 <span class="nv">mov</span>     <span class="nb">edx</span><span class="p">,</span> <span class="mh">598h</span>
+ <span class="err">0040</span><span class="nf">E016</span> <span class="nv">decrypt_loop</span><span class="p">:</span>   <span class="nv">push</span>    <span class="kt">dword</span> <span class="nv">ptr</span> <span class="p">[</span><span class="nb">edx</span><span class="o">+</span><span class="nb">esi</span><span class="p">]</span>
+ <span class="err">0040</span><span class="nf">E019</span>                 <span class="nv">xor</span>     <span class="p">[</span><span class="nb">esp</span><span class="p">],</span> <span class="nb">ecx</span>
+ <span class="err">0040</span><span class="nf">E01C</span>                 <span class="nv">pop</span>     <span class="kt">dword</span> <span class="nv">ptr</span> <span class="p">[</span><span class="nb">edx</span><span class="o">+</span><span class="nb">esi</span><span class="p">]</span>
+ <span class="err">0040</span><span class="nf">E01F</span>                 <span class="nv">sub</span>     <span class="nb">edx</span><span class="p">,</span> <span class="mi">2</span>
+ <span class="err">0040</span><span class="nf">E022</span>                 <span class="nv">sub</span>     <span class="nb">edx</span><span class="p">,</span> <span class="mi">2</span>
+ <span class="err">0040</span><span class="nf">E025</span>                 <span class="nv">nop</span>
+ <span class="err">0040</span><span class="nf">E026</span>                 <span class="nv">jnz</span>     <span class="nv">short</span> <span class="nv">decrypt_loop</span>
+ <span class="err">0040</span><span class="nf">E028</span> <span class="nv">crypted_code</span><span class="p">:</span>
+</code></pre></div></div>
+
+<p>Проведенный тест показал, что антивирусы, которые не попались на предыдущий трюк, вышли “сухими из воды” и на этот раз. Так же не удалось обмануть и “<em>народный антивирус</em>” - <strong>AVP</strong>. Это говорит о том, что перед процессом эмуляции win32 программ, все антивирусные программы устанавливают значение регистра <strong>EAX</strong>, равным точке входа в программу, но из других источников так же известно, что :</p>
+
+<blockquote>
+  <p>В <strong>EAX</strong> должен быть ноль, как результат вызова <strong>ntdll.NtSetInformationThread</strong>, после которого сразу вызывается точка входа модуля.</p>
+</blockquote>
+
+<p>Получается, что антивирусы неправильно эмулируют выполнение win32 программ? <strong>;)</strong></p>
+
+<h3 id="5-старые-песни-о-главном">5. Старые песни о главном</h3>
+
+<p>В далеком 2000 году, программистом, известным мировой общественности под псевдонимом <strong>Z0MBiE</strong>, была написана очень интересная статья, посвященная корректности “работы” эмуляторов, антивирусных программ <strong>Doctor Web</strong> и <strong>AVP</strong> с инструкциями <strong>div8</strong>/<strong>16</strong>/<strong>32</strong>, <strong>idiv8</strong>/<strong>16</strong>/<strong>32</strong>.</p>
+
+<p>В результате проведенного дизассемблирования, процедур эмуляторов, отвечающих за имитацию выполнения этих инструкций (прокомментированные листинги так же были приведены в этой статье), было доказано, что эмуляция инструкции <strong>idiv32</strong> (8/16/32) происходит неправильно в обеих программах.</p>
+
+<p>С момента публикации данной статьи прошло уже 4 года, но так как она не попала в широкую общественность, я решил проверить, исправили ли авторы данных программ ошибки, а за одно и посмотреть, как с процессом эмуляции данной инструкции справляются другие антивирусы.<br />
+Для тестирования была выбрана инструкция <strong>idiv32</strong>.<br />
+Если в процедуре имитации выполнения данной инструкции присутствует ошибка, то в зависимости от значений параметров (делимого и делителя), могут возникнуть следующие ситуации :</p>
+<ol>
+  <li>Будет неправильно подсчитан результат (частное и остаток от деления).</li>
+  <li>Неправильная проверка параметров, приведет к ошибке переполнения или деления на ноль.</li>
+</ol>
+
+<p>Для того, чтобы рассмотреть реакцию эмуляторов на различные значения параметров, была написана небольшая утилита (исходный текст доступен в примерах), которая создает файлы инфицированные <strong>win32/parite</strong>, с расшифровщиками вида :</p>
+<div class="language-nasm highlighter-rouge"><div class="highlight"><pre class="highlight"><code> <span class="c1">; в нашем случае:</span>
+ <span class="c1">;                    ( 599h ) &lt;= X &lt;= ((0FFFFFFFFh - 598h) / 3786Fh )</span>
+ <span class="c1">; (( 3786Fh * 599h ) + 598h ) &lt;= Y &lt;= ( 0FFFFFFFFh )</span>
+ <span class="c1">;  </span>
+ <span class="err">0040</span><span class="nf">E000</span> <span class="nv">start</span><span class="p">:</span>          <span class="nv">sub</span>     <span class="nb">edx</span><span class="p">,</span> <span class="nb">edx</span>
+ <span class="err">0040</span><span class="nf">E002</span>                 <span class="nv">mov</span>     <span class="nb">eax</span><span class="p">,</span> <span class="nv">Y</span>          <span class="c1">; Y = ( 3786Fh * X ) + 598h</span>
+ <span class="err">0040</span><span class="nf">E007</span>                 <span class="nv">mov</span>     <span class="nb">ecx</span><span class="p">,</span> <span class="nv">X</span>
+ <span class="err">0040</span><span class="nf">E00C</span>                 <span class="nv">idiv</span>    <span class="nb">ecx</span>             <span class="c1">; edx - остаток = 598h</span>
+ <span class="err">0040</span><span class="nf">E00E</span>                 <span class="nv">xchg</span>    <span class="nb">eax</span><span class="p">,</span> <span class="nb">ecx</span>        <span class="c1">; eax &lt;-&gt; ecx</span>
+ <span class="err">0040</span><span class="nf">E00F</span>                 <span class="nv">nop</span>
+ <span class="err">0040</span><span class="nf">E010</span>                 <span class="nv">mov</span>     <span class="nb">esi</span><span class="p">,</span> <span class="nv">offset</span> <span class="nv">crypted_code</span><span class="o">-</span><span class="mi">4</span>
+ <span class="err">0040</span><span class="nf">E015</span> <span class="nv">decrypt_loop</span><span class="p">:</span>   <span class="nv">push</span>    <span class="kt">dword</span> <span class="nv">ptr</span> <span class="p">[</span><span class="nb">edx</span><span class="o">+</span><span class="nb">esi</span><span class="p">]</span>
+ <span class="err">0040</span><span class="nf">E018</span>                 <span class="nv">xor</span>     <span class="p">[</span><span class="nb">esp</span><span class="p">],</span> <span class="nb">ecx</span>
+ <span class="err">0040</span><span class="nf">E01B</span>                 <span class="nv">pop</span>     <span class="kt">dword</span> <span class="nv">ptr</span> <span class="p">[</span><span class="nb">edx</span><span class="o">+</span><span class="nb">esi</span><span class="p">]</span>
+ <span class="err">0040</span><span class="nf">E01E</span>                 <span class="nv">nop</span>
+ <span class="err">0040</span><span class="nf">E01F</span>                 <span class="nv">sub</span>     <span class="nb">edx</span><span class="p">,</span> <span class="mi">2</span>
+ <span class="err">0040</span><span class="nf">E022</span>                 <span class="nv">sub</span>     <span class="nb">edx</span><span class="p">,</span> <span class="mi">2</span>
+ <span class="err">0040</span><span class="nf">E025</span>                 <span class="nv">nop</span>
+ <span class="err">0040</span><span class="nf">E026</span>                 <span class="nv">jnz</span>     <span class="nv">short</span> <span class="nv">decrypt_loop</span>
+ <span class="err">0040</span><span class="nf">E028</span> <span class="nv">crypted_code</span><span class="p">:</span>
+</code></pre></div></div>
+<p>Тест показал, что:</p>
+<ol>
+  <li>Антивирусы <strong>NAV</strong> и <strong>Doctor Web</strong> определяют наличие вируса в файлах, вне зависимости от значений параметров инструкции <strong>idiv32</strong>.</li>
+  <li><strong>Panda Antivirus</strong> и <strong>Stop!</strong> молчат как партизаны. Скорее всего, в этих антивирусах отсутствуют процедуры эмуляции данной инструкции или они реализованы с большим количеством ошибок.</li>
+  <li><strong>AVP</strong> правильно имитирует выполнение инструкции, в том случае, если делимое меньше 80000000h. С момента выхода статьи Z0MBiE прошло 4 года, но ошибка, так и не была исправлена, несмотря на то, что <em>он привел в статье правильный алгоритм, который можно было просто скопировать</em>.</li>
+</ol>
+
+<h3 id="6-против-лома-нет-приема-">6. Против лома нет приема …</h3>
+
+<p>Операционная система Windows произвела взаимовыгодный обмен прерываний (которые в Dos’е очень активно использовались, для обмана всех и вся) на функции API (Application Programming Interface).</p>
+
+<p>Допустим, что мы используем генератор полиморфных (раc) шифровщиков для защиты исполняемых файлов. Каждый из “защищаемых” файлов импортирует функции API из различных библиотек, а вся информация об импорте, содержится в исполняемом файле.<br />
+Для формирования вызова функции, необходимо знать:</p>
+<ol>
+  <li>Смещение, по которому (при загрузке программы) будет находиться реальный адрес функции в памяти.</li>
+  <li>Количество параметров использующихся при вызове функции API.</li>
+</ol>
+
+<p>Как Вы знаете, каждая из функций API, требует различных параметров для работы, которые должны быть загружены в стек. Помимо параметров, непосредственно используемых той или иной функцией, есть параметр, указывающий смещение, на которое будет передано управление после вызова функции.<br />
+Об этом параметре мало кто знает, потому что компиляторы генерируют вызовы функций следующим образом:</p>
+<div class="language-nasm highlighter-rouge"><div class="highlight"><pre class="highlight"><code>                <span class="nf">...</span>
+                <span class="nf">call</span> <span class="nv">_GetTickCount</span>
+  <span class="nl">continue:</span>     <span class="nf">...</span>
+ <span class="c1">;</span>
+ <span class="c1">; Смещение "xxxxxxxxh" указывает, на dword, который при загрузке программы</span>
+ <span class="c1">; в память, будет содержать точку входа в функцию GetTickCount</span>
+ <span class="c1">;</span>
+ <span class="nl">_GetTickCount:</span> <span class="nf">jmp</span>   <span class="kt">dword</span> <span class="nv">ptr</span> <span class="p">[</span><span class="nv">xxxxxxxxh</span><span class="p">]</span>
+</code></pre></div></div>
+<p>Инструкция <strong>CALL</strong> заносит в стек смещение (в данном случае “<strong>continue</strong>”) следующей инструкции, ну а затем <strong>JMP</strong> вызывает функцию (<strong>GetTickCount</strong>). Вызванный сервис использует необходимое количество параметров из стека, для выполнения своего назначения и предает управление на смещение, которое было загружено инструкцией <strong>CALL</strong>, в качестве последнего параметра.<br />
+Пример вызова функций в полиморфном расшифровщике:</p>
+<div class="language-nasm highlighter-rouge"><div class="highlight"><pre class="highlight"><code> <span class="c1">;</span>
+ <span class="c1">; пусть осуществляется обращение к функции использующей один параметр, например CloseHandle.</span>
+ <span class="c1">; ereg/value - любой 32-х битный регистр или значение.</span>
+ <span class="c1">;</span>
+ <span class="c1">; по смещению "xxxxxxxxh" расположено местоположение вызываемой функции API в памяти.</span>
+ <span class="c1">;</span>
+            <span class="nf">...</span> <span class="err">процесс</span> <span class="err">расшифровки</span> <span class="err">кода</span> <span class="nv">...</span>
+                <span class="nf">push</span>  <span class="nv">ereg</span><span class="o">/</span><span class="nv">value</span>
+                <span class="nf">push</span>  <span class="nv">offset</span> <span class="nv">continue</span>
+                <span class="nf">jmp</span>   <span class="kt">dword</span> <span class="nv">ptr</span> <span class="p">[</span><span class="nv">xxxxxxxxh</span><span class="p">]</span>               
+                <span class="nf">...</span>                                <span class="c1">; мусорные инструкции</span>
+                <span class="nf">ret</span>                                <span class="c1">; прощай эмулятор</span>
+                <span class="nf">...</span>
+  <span class="nl">continue:</span> <span class="nf">...</span> <span class="err">продолжение</span> <span class="err">процесса</span> <span class="err">расшифровки</span> <span class="nv">...</span>
+</code></pre></div></div>
+<p>Мы загрузили необходимое количество параметров (в данном случае 1), необходимых для работы функции и смещение, на которое будет передано управление. Результат работы вызванной функции <strong>CloseHandle</strong> нас не интересует вообще (следовательно и состояние параметров, кроме смещения, необходимого для возврата), главное, что в любом случае, после выполнения функции переход будет осуществлен к метке <strong>continue</strong>. “Под эмулятором”, переход произойдет только при выполнении инструкции <strong>ret</strong>./
+<em>Главное не использовать генерацию вызовов API функций, пишущих информацию по смещениям, указанных в параметрах.</em></p>
+
+<p>Теперь готовимся к тестированию на “живце”. Для вставки простейшей реализации трюка в расшифровщик нам понадобятся:</p>
+<ol>
+  <li>Утилита, генерирующая отчет о структуре секций импорта файлов формата PortableExecutables.</li>
+  <li>Win32 programmer’s reference - информация о функциях (API): описание действия, параметров и их количества.</li>
+</ol>
+
+<p>В списке импортируемых функций зараженной программы, значится <strong>GetCommandLineA</strong>. Это не может не радовать, так как эта функция не нуждается в параметрах, а в нашем случае (когда свободного места в расшифровщике мало) это очень важно. Кроме того, она не выполняет никаких “<em>вредных</em>” действий./
+При загрузке программы, информация о положении этого сервиса будет расположена по смещению 400000h (Image Base) + 630Eh.<br />
+Перед вставкой вызова функции <strong>GetCommandLineA</strong>, была изменена структура расшифровщика и произведена некоторая оптимизация.</p>
+<div class="language-nasm highlighter-rouge"><div class="highlight"><pre class="highlight"><code> <span class="err">0040</span><span class="nf">E000</span>                 <span class="nv">push</span>    <span class="nv">offset</span> <span class="nv">decrypt_start</span>
+ <span class="err">0040</span><span class="nf">E005</span>                 <span class="nv">jmp</span>     <span class="kt">dword</span> <span class="nv">ptr</span> <span class="p">[</span><span class="mh">4063E0h</span><span class="p">]</span>
+ <span class="err">0040</span><span class="nf">E00B</span>                 <span class="nv">retn</span>                             <span class="c1">; прощайте эмуляторы</span>
+ <span class="err">0040</span><span class="nf">E00C</span> <span class="nv">decrypt_start</span><span class="p">:</span>  <span class="nv">mov</span>     <span class="nb">esi</span><span class="p">,</span> <span class="nv">offset</span> <span class="nv">crypted_code</span><span class="o">-</span><span class="mi">4</span>
+ <span class="err">0040</span><span class="nf">E011</span>                 <span class="nv">mov</span>     <span class="nb">edx</span><span class="p">,</span> <span class="mh">598h</span>
+ <span class="err">0040</span><span class="nf">E016</span> <span class="nv">decrypt_loop</span><span class="p">:</span>   <span class="nv">push</span>    <span class="kt">dword</span> <span class="nv">ptr</span> <span class="p">[</span><span class="nb">edx</span><span class="o">+</span><span class="nb">esi</span><span class="p">]</span>
+ <span class="err">0040</span><span class="nf">E019</span>                 <span class="nv">xor</span>     <span class="kt">dword</span> <span class="nv">ptr</span> <span class="p">[</span><span class="nb">esp</span><span class="p">],</span> <span class="mh">3786Fh</span>
+ <span class="err">0040</span><span class="nf">E020</span>                 <span class="nv">pop</span>     <span class="kt">dword</span> <span class="nv">ptr</span> <span class="p">[</span><span class="nb">edx</span><span class="o">+</span><span class="nb">esi</span><span class="p">]</span>
+ <span class="err">0040</span><span class="nf">E023</span>                 <span class="nv">sub</span>     <span class="nb">edx</span><span class="p">,</span> <span class="mi">4</span>
+ <span class="err">0040</span><span class="nf">E026</span>                 <span class="nv">jnz</span>     <span class="nv">short</span> <span class="nv">decrypt_loop</span>
+ <span class="err">0040</span><span class="nf">E028</span> <span class="nv">crypted_code</span><span class="p">:</span>
+</code></pre></div></div>
+<p>Как я и ожидал, ни один из антивирусов не определил наличие вируса <strong>win32/parite</strong> в зараженных файлах, измененных таким образом.</p>
+
+<h3 id="7-заключение">7. Заключение</h3>
+<p>Настало время подвести итоги тестирования:</p>
+<ul>
+  <li><strong>Panda Antivirus</strong> известный тем, что может вылечить то, что другие даже не берутся (взять тот же самый <strong>win32/kriz</strong>), показал самые ужасающие результаты. Эмулятор просто нулевой.</li>
+  <li>Об эмуляторе <strong>Norton Antivirus</strong> ходит дурная слава, несмотря на это он показал очень высокие результаты.</li>
+  <li>По качеству, эмулятор антивируса <strong>Doctor Web</strong> показал результаты аналогичные <strong>NAV</strong>, но скорость проверки файлов на порядок выше.</li>
+</ul>
+
+<table>
+  <thead>
+    <tr>
+      <th style="text-align: left">AV name</th>
+      <th style="text-align: left">delta value</th>
+      <th style="text-align: left">начальное значение eax</th>
+      <th style="text-align: left">idiv32</th>
+      <th style="text-align: left">вызов функций API</th>
+      <th style="text-align: left">оценка</th>
+      <th> </th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td style="text-align: left">Doctor Web 4.30a</td>
+      <td style="text-align: left">+</td>
+      <td style="text-align: left">+</td>
+      <td style="text-align: left">+</td>
+      <td style="text-align: left">-</td>
+      <td style="text-align: left">3</td>
+      <td> </td>
+    </tr>
+    <tr>
+      <td style="text-align: left">Norton Antivirus 2004</td>
+      <td style="text-align: left">+</td>
+      <td style="text-align: left">+</td>
+      <td style="text-align: left">+</td>
+      <td style="text-align: left">-</td>
+      <td style="text-align: left">3</td>
+      <td> </td>
+    </tr>
+    <tr>
+      <td style="text-align: left">Kaspersky Anti-virus (AVP) v3.5.133.0</td>
+      <td style="text-align: left">-</td>
+      <td style="text-align: left">+</td>
+      <td style="text-align: left">+ / -</td>
+      <td style="text-align: left">-</td>
+      <td style="text-align: left">1+</td>
+      <td> </td>
+    </tr>
+    <tr>
+      <td style="text-align: left">Stop! Scanner 5.0</td>
+      <td style="text-align: left">-</td>
+      <td style="text-align: left">-</td>
+      <td style="text-align: left">-</td>
+      <td style="text-align: left">-</td>
+      <td style="text-align: left">-</td>
+      <td>0</td>
+    </tr>
+    <tr>
+      <td style="text-align: left">Panda Antivirus Titanium 2004</td>
+      <td style="text-align: left">-</td>
+      <td style="text-align: left">-</td>
+      <td style="text-align: left">-</td>
+      <td style="text-align: left">-</td>
+      <td style="text-align: left">0</td>
+      <td> </td>
+    </tr>
+  </tbody>
+</table>
+
+<p>К статье прилагается <a href="/assets/downloads/2004-04-06/examples.zip">архив</a> (пароль 1) содержащий:</p>
+<ul>
+  <li>Примеры реализации каждого из трюков, на которых производилось тестирование (определяются антивирусами как зараженные вирусом, но на самом деле абсолютно неработоспособны и опасности не представляют).</li>
+  <li>Утилиту для получения отчета о структуре исполняемых файлов PE (with source).</li>
+  <li>Исходные тексты генератора файлов, демонстрирующих трюк с инструкцией <strong>idiv32</strong>.</li>
+</ul>
+
+<p><strong>Внимание</strong>: вирусный код обрезан таким образом, что он не способен распространяться. В оригинале, вирус не содержит никаких вредоносных компонент. Не смотря на это, автор статьи и администрация сайта не несет ответственности за последствия, которые имели место, как следствие использования файлов из этого архива. Вы используете все вышеперечисленное на свой страх и риск.</p>
+
+<p>Чтобы там не говорили, а антивирусные эмуляторы достаточно тяжело обмануть, действуя “вслепую” (предполагая). Необходимо дизассемблировать и разбирать алгоритмы их работы, но для этого требуется очень высокий уровень знаний, которым обладают единицы.</p>
+
+<p>Огромное спасибо всем членам команды <strong>UINC</strong> за помощь в работе над статьей.</p>
+
+<p>Мой почтовый ящик всегда открыт для эмоций, критики, советов (конструктивных и нет) и т.д.</p>
+
+<p>Заинтересовавшимся лицам рекомендуются к прочтению:</p>
+<ol>
+  <li>Формат исполняемых файлов PortableExecutables, Hard Wisdom ‘1999</li>
+  <li>Блеск и нищета кодоэмуляторов, Земский Фершал N3 ‘1999</li>
+  <li>И. Данилов vs В. Богданов (Dr. Web vs AVP), Z0MBiE ‘2000</li>
+  <li><a href="/antivirus/emulation/assembly/code-emulation-techniques/">Основы разработки эмуляторов кода</a>, Andrei Agafonov ‘2004</li>
+</ol>
+
+<p>Выпущена: 6 апреля 2004<br />
+Автор: <a href="https://github.com/andrei-ag/">Andrei Agafonov</a><br />
+Рецензирование: Команда UinC.RU, отдельное спасибо Dr.Golova<br />
+Источник: <a href="https://web.archive.org/web/20051215213447/http://uinc.ru:80/articles/48/">http://www.uinc.ru</a></p>]]></content><author><name>Andrei Agafonov</name></author><category term="antivirus" /><category term="emulation" /><category term="assembly" /><category term="anti-emulation" /><category term="idiv32" /><category term="api-tricks" /><category term="drweb" /><category term="avp" /><category term="norton" /><category term="panda" /><category term="eax" /><category term="ntSetInformationThread" /><summary type="html"><![CDATA[Тестирование антивирусных эмуляторов. Обман эмуляции через call+pop/sub, уязвимость idiv32 и вызовы API. Сравнение Dr.Web, NAV, AVP, Panda, Stop!]]></summary></entry><entry xml:lang="ru"><title type="html">Эмуляция программного кода</title><link href="http://localhost:4000/antivirus/emulation/assembly/code-emulation-techniques/" rel="alternate" type="text/html" title="Эмуляция программного кода" /><published>2004-02-15T00:00:00+03:00</published><updated>2004-02-15T00:00:00+03:00</updated><id>http://localhost:4000/antivirus/emulation/assembly/code-emulation-techniques</id><content type="html" xml:base="http://localhost:4000/antivirus/emulation/assembly/code-emulation-techniques/"><![CDATA[<h2 id="1-экскурс-в-историю">1. Экскурс в историю</h2>
+<p>Непосредственное использование эмуляторов программного кода (в антивирусных программах) началось в начале 90ых. Толчком стал выход первого полноценного полиморфного вируса, точнее сказать полиморфного движка.</p>
+
+<p><em>Полиморфным движком</em> - называется “универсальный” программный код (библиотека), подключив который в вирус (и не только) можно сделать его полиморфным.</p>
+
+<p>Первый движок назывался - <em>MuTation Engine</em> (<em>MTE</em>). После его появления антивирусные конторы стали хвататься за голову (особенно американские), некоторые чувствовали, что что-то подобное скоро выйдет, уже обдумывали универсальные методы по детектированию шифрованных вирусов.<br />
+<strong>Кстати, автором MTE являлся программист из Болгарии, более известный под псевдонимом Dark Avenger. Он является автором “культовых” вирусов Eddie, Commander Bomber, Dir … Именно этот человек двигал “прогресс” (в плане разработки новых вирусных технологий) в конце 80ых годов.</strong></p>
+
+<p>Полиморфикам предшествовали шифрованные (иногда их так же называют “само шифрующимися”) вирусы, для детектирования которых антивирусы в качестве сигнатур использовали постоянные участки расшифровщиков вирусного кода. Если сигнатура совпадала, то из расшифровщика брались необходимые данные (например, алгоритм шифровки, если он менялся, ключ …) и использовались для расшифровки вирусного кода, затем вторая сигнатура проверяла расшифрованный код на наличие вируса. Однако это очень и очень неудобно, процесс детектирования одного такого вируса занимает много кода. Плюс ко всему, используя такой метод детектирования шифрованных вирусов, для каждого придется иметь две сигнатуры и специальную процедуру по расшифровке кода. Но задумываться об универсальном способе детектирования шифрованных вирусов создатели не хотели, пока … не появился MTE.</p>
+
+<p>Конечно, очень многие полиморфики можно детектировать не эмуляцией кода расшифровщика, а различными алгоритмическими процедурами. Но опять же это очень сложные процедуры, причем они редко дают сто процентный результат определения зараженности файла вирусом, особенно если полиморфность расшифровщика достаточно высока (т.е. расшифровщик имеет очень мало сигнатур, а очень часто не имеет их вообще). В итоге из 100 файлов зараженных вирусом использующим “слабенький” полиморфный алгоритм, антивирусы обнаруживали только 60 или немного больше (меньше).</p>
+
+<p>Несмотря на геморрой, связанный с таким детектированием многие антивирусные компании решили выбрать этот сложный путь (например, взять ту же McAfee), то время, пока авторы вирусов только учились новой технологии полиморфизма, еще можно было использовать. Но в 1994 году, в Англии (уже не в Болгарии), появляется очень серьезный полиморфный движок <strong>SMEG</strong> (<strong>S</strong>imulated <strong>M</strong>etamorphic <strong>E</strong>ncryption <strong>G</strong>enerator). Определять “старым способом” декрипторы созданные по алгоритмам, использовавшимся в этом движке практически невозможно. Кроме определения, нужно еще и расшифровывать вирусное тело, что бы излечить инфицированный файл!<br />
+<em>Ходили слухи, что английская полиция летом 1995 года, арестовала автора известного под кличкой Black Baron, за создание вирусов Pathogen, Quueg и трех версий полиморфных движков SMEG.</em><br />
+Но к этому моменту было уже достаточно программистов, способных писать гораздо более продвинутые полиморфики. Примерно в это же время, в Словакии, появляется <strong>E</strong>xplosion’s <strong>M</strong>utation <strong>M</strong>achine (от “культовой” личности - Vyvojar, он же автор знаменитого вируса <a href="https://en.wikipedia.org/wiki/OneHalf">OneHalf</a>). Немного позже в России появляется <a href="https://www.virusbulletin.com/uploads/pdf/magazine/1996/199604.pdf">Zhengxi</a>, от одноименного автора, который в своих вирусах использовал, усовершенствованную версию движка SMEG.</p>
+
+<p>Конечно, каждой вирусной технологии можно противопоставить обратную (антивирусную), но теперь факт заключался лишь в том, что хороший полиморфик написать гораздо проще, чем его обнаруживать. Так полиморфики и полиморфные движки стали появляться как грибы после дождя, в результате (к сожалению многих сторонников oldschool) пришлось завязать с алгоритмическим детектированием. Хотя был такой русский антивирус, который просто игнорировал появление полиморфных вирусов. Но это длилось до поры, до времени, пока в Россию не пришел вирус <a href="https://en.wikipedia.org/wiki/OneHalf">OneHalf</a>, который стал распространяться с бешеной скоростью и “народный антивирус” (самый популярный по тем временам в exUSSR) оказался не в состоянии даже определить наличие данного вируса (тем более лечить инфицированные файлы или диски). Позже проект был закрыт, автор антивируса так и не смог (а может, просто не хотел) включить в свое “творение” эмулятор программного кода.</p>
+
+<h2 id="2-технология-кодо-эмулятора">2. Технология кодо-эмулятора</h2>
+<p>Процесс эмуляции кода, представляет собой разбор программного кода на инструкции и имитацию их исполнения. Данная технология используется главным образом в антивирусных программах для:</p>
+<ol>
+  <li>расшифровки зашифрованного кода (вирусного тела)</li>
+  <li>исследования программ на предмет содержания участков кода, выполняющих вирусоподобные или деструктивные действия (эвристический анализ)</li>
+  <li>поиск постоянных участков кода (сигнатур) свойственных определенным вирусам, которые могут быть расположены в произвольном порядке (метаморфные вирусы)</li>
+</ol>
+
+<p>Для разработки эмулятора, можно воспользоваться двумя способами:</p>
+
+<p><strong>Первый способ</strong> подразумевает собой обычную трассировку программы, т.е. ее загрузку в память и исполнение путем использования отладочного прерывания. Таким методом пользуется большинство отладчиков, но вся проблема в том, что даже безрукий человек может обломать процесс трассировки. В крайнем случае, есть множество статей на тему “облома” и TD и SoftIce. А если в полиморфном расшифровщике вставлены антиотладочные трюки, которые в случае обнаружения трассировки запускают какую-нибудь деструкцию. В результате антивирус сам запустит деструкцию в процессе эмуляции и только навредит. <em>Кстати, для детектирования вирусов семейства SMEG, именно этот способ, использовал в своем антивирусе американец StormBringer.</em></p>
+
+<p><strong>Второй способ</strong> это непосредственно эмуляция. Кусок кода читается в буфер антивируса, разбирается на инструкции и эмулируется их исполнение с помощью различных трюков. Но что бы правильно имитировать исполнение всех компьютерных заморочек, может понадобиться очень-очень много сил и времени. Это наиболее безопасный способ, но следует заметить, что в антивирусах используется комбинация двух способов.</p>
+
+<h3 id="21-алгоритм-работы">2.1. Алгоритм работы</h3>
+
+<p>Антивирус читает всю исследуемую программу в антивирусный буфер и передает в эмулятор выявленную информацию о разбираемой программе. Параметры, передаваемые в эмулятор, зависят от его структуры и могут представлять собой:</p>
+<ol>
+  <li><strong>Тип исполняемого файла</strong>. Этот параметр является необходимым для <em>универсальных эмуляторов</em>, тех, которые способны работать с исполняемыми файлами различного типа (COM, EXE, PE и т.д.). Это связанно с тем, что как Вы (наверное) знаете, структура исполняемых файлов отличается друг от друга, следовательно, для нормальной работы эмулятору необходимо знать с каким типом файла он “имеет дело”.</li>
+  <li><strong>Оригинальное расположение инструкции в памяти</strong>. В данном случае оригинальное расположение в памяти, точки входа в программу.</li>
+  <li><strong>Расположение инструкции в антивирусном буфере</strong>. В данном случае расположение точки входа в программу, в антивирусном буфере.</li>
+  <li><strong>Глубина анализа</strong>.</li>
+  <li><strong>Максимальное время работы эмулятора с программой</strong>.
+Выше были перечислены основные параметры, они должны использоваться в любом эмуляторе, для его стабильной и “успешной” работы. Вы можете использовать дополнительные параметры, которые могут быть необходимы.
+Наиболее подробно о назначении каждого из выше описанных параметров эмулятора, Вы поймете в ходе чтения статьи.</li>
+</ol>
+
+<p>Теперь рассмотрим схему работы простейшего эмулятора:</p>
+
+<ul>
+ <li>Инициализация переменных, которые содержат (или будут содержать) информацию об исследуемом коде</li>
+  <ol>
+   <li>Разбор и установка параметров переданных антивирусом.</li>
+   <li>Обнуление значений виртуальных регистров.</li>
+   <li>Настройка буфера, который будет использоваться эмулируемой программой в качестве стека.</li>
+   <li>...</li>
+  </ol>
+ <li><b>Инициализация анализатора кода</b>.</li>
+ <li>Начало цикла эмуляции программы.</li>
+  <ol>
+   <li><b>Запуск процедур входящих в состав анализатора кода</b>.</li>
+   <li>Разбор инструкции дизассемблером&lt;/a&gt;. В том случае, если во время работы была допущена ошибка
+       (например, встретилась неизвестная команда), эмулятор завершает работу.</li>
+   <li>Разбор эмулятором, параметров инструкции (размер инструкции, используемые регистры, тип имитации исполнения)
+       полученной от дизассемблера. В зависимости от действий необходимых для имитации исполнения инструкции (параметр,
+       который определяет дизассемблер) переходим к пункту 4 или 5.</li>
+   <li>Запуск инструкции в специальных условиях ("карантине"). Переходим к пункту 6.</li>
+   <li>Полная имитация выполнения инструкции.</li>
+   <li>Перевод указателя на следующую инструкцию.</li>
+  </ol>
+ <li>Перейдем к началу цикла, если в ходе эмуляции инструкции:</li>
+  <ol>
+   <li>Не произошло ошибок.</li>
+   <li>Требуемый участок кода не был исследован до конца (недостаточная глубина анализа).</li>
+   <li>Время, отведенное на эмуляцию программы, не было превышено.</li>
+  </ol>
+</ul>
+
+<p>Пункты: <strong>1</strong> и “<strong>Инициализация анализатора кода</strong>” относятся к технологии “Анализаторов кода”. Этой технологии “посвящена” <a href="/antivirus/code-analysis/assembly/antivirus-code-analysis/">отдельная статья</a> являющаяся продолжением этой.</p>
+
+<h3 id="211-инициализация-эмулятора">2.1.1. Инициализация эмулятора</h3>
+<p>В ходе имитации выполнения программы, для хранения значений регистров используются специальные переменные - <em>виртуальные регистры</em>.<br />
+Для того, что бы эмулируемая программа, не испортила данные, хранящиеся антивирусом в стеке, отводится специальный буфер, который принято называть <em>виртуальным стеком</em>. Все манипуляции, производимые со (в) стеком в ходе имитации исполнения программы будут совершаться в этом буфере.</p>
+
+<p>Перед процессом эмуляции программы, необходимо установить значения (виртуальных) регистров <strong>eax</strong> и <strong>esp</strong>, остальные же могут иметь произвольное значение.<br />
+Регистр <strong>eax</strong>, должен содержать значение <em>точки входа</em> в программу, которое в качестве [параметра] передается в эмулятор антивирусом.<br />
+Прежде чем устанавливать значение регистра <strong>esp</strong>, необходимо выделить буфер под стек. Виртуальный регистр <strong>esp</strong>, должен содержать смещение, указывающее на конец этого буфера.<br />
+Перед процессом эмуляции программы, необходимо определить буфер под стек и выделить переменные под виртуальные регистры, причем виртуальный регистр <strong>esp</strong> должен содержать смещение конца буфера, выделенного под стэк.</p>
+
+<p>Теперь приведем небольшой пример:</p>
+<div class="language-nasm highlighter-rouge"><div class="highlight"><pre class="highlight"><code> <span class="c1">; regs   - буфер под значения 7ми виртуальных регистров (32bit)</span>
+ <span class="c1">; vstack - буфер под виртуальный стек</span>
+ <span class="c1">;</span>
+ <span class="nf">.data</span>
+ <span class="nf">regs</span>                    <span class="nv">db</span> <span class="mi">7</span><span class="o">*</span><span class="mi">4</span> <span class="nv">dup</span> <span class="p">(</span><span class="nv">?</span><span class="p">)</span>
+ <span class="nf">vstack</span>                  <span class="nv">db</span> <span class="mi">50000</span> <span class="nv">dup</span> <span class="p">(</span><span class="nv">?</span><span class="p">)</span>
+ <span class="nf">vstack_small</span>            <span class="nv">db</span> <span class="mi">10000</span> <span class="nv">dup</span> <span class="p">(</span><span class="nv">?</span><span class="p">)</span>
+ <span class="nf">.code</span>
+                 <span class="nf">mov</span>     <span class="nb">edx</span><span class="p">,</span><span class="nv">offset</span> <span class="nv">vstack</span><span class="o">+</span><span class="mi">50000</span>
+                 <span class="nf">mov</span>     <span class="kt">dword</span> <span class="nv">ptr</span> <span class="p">[</span><span class="nv">regs</span><span class="o">+</span><span class="mi">4</span><span class="o">*</span><span class="mi">4</span><span class="p">],</span><span class="nb">edx</span>
+                 <span class="nf">mov</span>     <span class="nb">edx</span><span class="p">,</span><span class="err">расположение</span> <span class="err">точки</span> <span class="err">входа</span> <span class="err">в</span> <span class="err">памяти</span>
+                 <span class="nf">mov</span>     <span class="kt">dword</span> <span class="nv">ptr</span> <span class="p">[</span><span class="nv">regs</span><span class="o">+</span><span class="mi">0</span><span class="o">*</span><span class="mi">4</span><span class="p">],</span><span class="nb">eax</span>
+</code></pre></div></div>
+
+<p>Буфер <strong>vstack_small</strong> используется в качестве дополнительного буфера под виртуальный стек и предназначен специально на случай использования конструкций типа:</p>
+<div class="language-nasm highlighter-rouge"><div class="highlight"><pre class="highlight"><code>				 <span class="nf">...</span>
+                 <span class="nf">add</span>     <span class="nb">esp</span><span class="p">,</span><span class="mi">20</span>
+                 <span class="nf">push</span>    <span class="mh">00000000h</span>
+                 <span class="nf">pop</span>     <span class="nb">eax</span>
+                 <span class="nf">sub</span>     <span class="nb">esp</span><span class="p">,</span><span class="mi">20</span>
+                 <span class="nf">add</span>     <span class="nb">eax</span><span class="p">,</span><span class="err">ключ</span> <span class="err">необходимый</span> <span class="err">для</span> <span class="err">расшифровки</span> <span class="err">кода</span>
+                 <span class="nf">...</span>
+</code></pre></div></div>
+
+<p>Я думаю, Вы понимаете, какие могут быть последствия, при выполнении подобных действий в начале исследуемой программы (цикла расшифровки).<br />
+Теоретически, буфер являющийся виртуальным стеком должен располагаться после буфера, отведенного на хранение эмулируемых файлов.</p>
+
+<p>Семь 32х битрых регистров хранятся в буфере <strong>regs</strong>, в последовательности:</p>
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>        EAX = 000 или 0
+        ECX = 001 или 1
+        EDX = 010 или 2
+        EBX = 011 или 3
+        ESP = 100 или 4
+        EBP = 101 или 5
+        ESI = 110 или 6
+        EDI = 111 или 7
+</code></pre></div></div>
+
+<p>Процесс инициализации, так же подразумевает установку начальных значений всех переменных, которые используются в работе эмулятора.</p>
+
+<h3 id="212-предел-терпения">2.1.2. “Предел терпения”</h3>
+
+<p>Эмулятор завершает свою работу в случае ошибки или по “служебной необходимости”.
+Ошибки могут возникать по самым различным причинам, например:</p>
+<ul>
+  <li>Встрече инструкции неизвестного типа.</li>
+  <li>Обращении разбираемой инструкции к смещениям находящимся вне антивирусного буфера   (содержащего исследуемую программу) и виртуального стека.</li>
+</ul>
+
+<p>Выход по “<em>служебной необходимости</em>” осуществляется, по достижению установленной “глубины анализа”.<br />
+<em>Глубина анализа</em> - максимальное количество инструкций (или размер участка кода), которое может быть исполнено эмулятором.<br />
+Совершенно ясно, что если затрачивать много времени на анализ каждой программы, то процесс сканирования всех файлов жесткого диска значительно затянется. Следовательно, для всех исследуемых программ этот параметр должен иметь минимальное значение. Конечно, в ходе эмуляции программы, его значение может изменяться, при встрече эвристическим анализатором участков кода схожих с использующимися в:</p>
+<ol>
+  <li>вирусах или троянских программах (так называемые эвристические маски)</li>
+  <li>декрипторах создаваемых различными упаковывающими или шифрующими утилитами</li>
+</ol>
+
+<p>Правильная реализация работы эмулятора с “глубиной анализа”, значительно экономит время, затраченное на “исследование” программ.
+Пытаясь обмануть эмуляторы, программисты “изобретают” <em>анти-эмуляционные приемы</em> - различные алгоритмы, которые эмуляторы выполняют неправильно. Если такие трюки успешно срабатывают, эмулятор не может правильно расшифровать вирусное тело или дойти до места, с которого начинается вирусная сигнатура. Зачастую эмулятор попадает в вечный цикл и в этом случае антивирусная программа просто зависает.<br />
+Именно с целью предотвратить неожиданные зависания, на исполнение каждой программы отводится определенное время. После имитации выполнения каждой инструкции эмулятор проверяет, не прошло ли время, отведенное на “исследование” программы.<br />
+Рассмотрим простейший метод использования таймера в эмуляторе:</p>
+<div class="language-nasm highlighter-rouge"><div class="highlight"><pre class="highlight"><code> <span class="nf">.data</span>
+  <span class="nf">emul_time</span>              <span class="nv">dd</span> <span class="nv">?</span>
+ <span class="nf">.code</span>
+ <span class="c1">;</span>
+ <span class="c1">; Выполняется в процессе инициализации эмулятора.</span>
+ <span class="c1">;               </span>
+ <span class="c1">; a) Определим значение таймера (с момента запуска Windows (в миллисекундах)), на</span>
+ <span class="c1">;    момент запуска эмулятора. </span>
+ <span class="c1">; b) Пусть допустимое время эмуляции исполнения программы составляет 3000 миллисекунд.</span>
+ <span class="c1">; c) В переменной emul_time запомним значение таймера, на котором процесс эмуляции</span>
+ <span class="c1">;    должен быть завершен.</span>
+ <span class="c1">;</span>
+  <span class="nl">get_timer_val:</span> <span class="nf">call</span>    <span class="nv">GetTickCount</span>
+                 <span class="nf">cmp</span>     <span class="nb">eax</span><span class="p">,</span><span class="mh">0FFFFFFFFh</span><span class="o">-</span><span class="mi">3000</span><span class="nv">d</span>
+                 <span class="nf">jc</span>      <span class="nv">set_timer_val</span>
+ <span class="c1">;</span>
+  <span class="nl">skip_time:</span>     <span class="nf">call</span>    <span class="nv">GetTickCount</span>
+                 <span class="nf">or</span>      <span class="nb">eax</span><span class="p">,</span><span class="nb">eax</span>
+                 <span class="nf">jnz</span>     <span class="nv">skip_time</span>
+ <span class="c1">;</span>
+  <span class="nl">set_timer_val:</span> <span class="nf">add</span>     <span class="nb">eax</span><span class="p">,</span><span class="mi">3000</span>
+                 <span class="nf">mov</span>     <span class="kt">dword</span> <span class="nv">ptr</span> <span class="p">[</span><span class="nv">emul_time</span><span class="p">],</span><span class="nb">eax</span>
+ 
+  <span class="nf">...</span>
+ 
+ <span class="c1">;</span>
+ <span class="c1">; Выполняется после перевода указателя, на следующую инструкцию. </span>
+ <span class="c1">;</span>
+  <span class="nl">emulate_check:</span> <span class="nf">call</span>    <span class="nv">GetTickCount</span>              <span class="c1">; если было привышено макс.</span>
+                 <span class="nf">cmp</span>     <span class="nb">eax</span><span class="p">,</span><span class="kt">dword</span> <span class="nv">ptr</span> <span class="p">[</span><span class="nv">emul_time</span><span class="p">]</span> <span class="c1">; время, отведенное на</span>
+                 <span class="nf">ja</span>      <span class="err">выход</span> <span class="err">из</span> <span class="err">эмулятора</span>        <span class="c1">; эмуляцию программы, выйдем</span>
+  <span class="nf">...</span>
+</code></pre></div></div>
+
+<h3 id="213-имитация-исполнения-инструкций">2.1.3. Имитация исполнения инструкций</h3>
+
+<p><em>Имитацией</em> называется процесс выполнения различных действий, которые являются аналогом работы той или иной инструкции.</p>
+
+<p>Для того, что бы процесс эмуляции инструкции прошел правильно, необходима информация о ее структуре (полученная в результате разбора дизассемблером) и местоположении в памяти (<strong>EIP</strong>), которое она имеет:</p>
+<ol>
+  <li>При загрузке в память программы, во время запуска.</li>
+  <li>Когда программа находится в антивирусном буфере.</li>
+</ol>
+
+<p>Для хранения этих данных могут использоваться регистры или специальные переменные, начальное значение которых задается параметрами 2 и 3 и имеет свойство изменяться:</p>
+<ol>
+  <li>В ходе процесса эмуляции инструкции, если ее “назначением” является изменение местоположения (например <strong>JUMP</strong>,    <strong>CALL</strong>, <strong>RET</strong>).</li>
+  <li>Во время “<strong>перевода указателя на следующую инструкцию</strong>” (значение обоих положений увеличивается на размер проэмулированной инструкции).</li>
+</ol>
+
+<p>Исходя из данных, полученных об инструкции, для имитации исполнения, используется один из способов:</p>
+<ol>
+  <li>Разобранная инструкция (или участок кода) запускается “напрямую”, в специальной среде.</li>
+  <li>Исполнение инструкции имитируется полностью, без запуска.</li>
+  <li>Используется комбинация из двух, описанных выше способов.</li>
+</ol>
+
+<p>Большинство инструкций, после разбора дизассемблером, можно запустить напрямую, и обойтись без полной имитации, иначе можно только потерять “драгоценное” время. Кроме того, если каждую инструкцию имитировать, то можно писать только эмуляцию инструкций до пенсии. В данном случае, можно запустить инструкцию на “прямую” и зафиксировать изменения, которые произошли после ее исполнения (в регистрах, флагах … ).</p>
+
+<p><strong>Второй способ</strong> применяется в том случае, если нельзя обойтись запуском в специальной среде. В полной имитации нуждаются инструкции, которые:</p>
+<ol>
+  <li>Обращаются к различным смещениям.</li>
+  <li>Изменяют местоположение (<strong>EIP</strong>) исследуемого кода.</li>
+  <li>В случае неправильного использования, могут вызвать ошибку, которая приведет к зависанию.</li>
+</ol>
+
+<p>Бывают (редкие) случаи, когда использование комбинации из двух способов, является наиболее приемлемым решением, т.е. способ позволяет создать наиболее “быстрый” и универсальный алгоритм имитации выполнения некоторых инструкций.</p>
+
+<h3 id="214-загрузка-файлов">2.1.4. Загрузка файлов</h3>
+
+<p>Прежде чем производить имитацию исполнения работы исполняемого файла, необходимо выполнить действия, предназначенные для загрузки файла в память процесса, в котором работает эмулятор.</p>
+
+<p>Будем считать, что Вы владеете знаниями формата исполняемых файлов <strong>PortableExecutables</strong>. Если же нет, то советую отложить чтение данной статьи, до тех пор, пока Вы не проштудируете какое либо из описаний (очень советую руководство написанное <code class="language-plaintext highlighter-rouge">Hard Wisdom</code>).</p>
+
+<p>Как Вы знаете, в файлах формата PE, все данные содержатся в секциях, причем <em>местоположение этих данных в памяти существенно отличается от того</em>, <em>которое они имеют в файле</em>. Таким образом, в идеале, нужно загружать файл в буфер, пользуясь алгоритмом, максимально приближенным к тому, который использует операционная система:</p>
+<ul>
+  <li>В память загружаются данные нулевой секции, которая содержит в себе все данные, расположенные до начала первой   секции (заголовки EXE, PE, данных о секциях файла …). Ее размером (в памяти и файле), соответственно, будет   являться местоположение первой секции, относительно начала файла, а начальным положением (в файле и памяти) - 0.</li>
+  <li>Затем грузятся все остальные секции. При загрузке, в качестве размера очень удобно использовать значение, полученное   путем вычитания начала <strong>текущей секции</strong> в памяти, от начала <strong>следующей секции</strong> (если <strong>текущая секция</strong>   является последней, то используется размер <strong>текущей секции в памяти</strong>). Можно так же использовать размер данных   <strong>текущей секции</strong> в памяти, но может понадобиться выравнивание этого значения на границу, указанную в заголовке   (смещение <strong>38h</strong>, от начала заголовка PE).</li>
+</ul>
+
+<p>Конечно, все не так просто как может показаться на первый взгляд. Этим способом можно загружать файлы, размер которых в памяти (<strong>Image Size</strong> + размер данных <strong>нулевой секции</strong>) не будет превышать размер буфера, отведенного для исследования файлов. Но даже файлы очень маленьких размеров, в памяти могут занимать огромные размеры. Потому что в память, помимо кода, будут загружаться в полном объеме все переменные и буферы, не только содержащие данные, но и зарезервированные под их хранение. А первым же файлом, который невозможно будет загрузить, окажется Ваш антивирус.<br />
+Таким образом, от этого способа придется отказаться и ограничится простым чтением файла в буфер. Но и в этом случае, нам так же не обойтись без трудностей, которые будут возникать в ходе эмуляции программы. Приведем несколько наглядных примеров, для файла с данными:</p>
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code> Image Base = 400000h
+ 
+  Section name            : CODE
+  Virtual Size            : 00002000H
+  Virtual Address         : 00001000H
+  Size of RAW data        : 00001C00H
+  Pointer to RAW data     : 00000600H (X)
+ 
+  ...                     : ...
+ 
+  Section name            : DATA
+  Virtual Size            : 009DE000H
+  Virtual Address         : 00003000H (A)
+  Size of RAW data        : 00000400H
+  Pointer to RAW data     : 00002200H (B)
+ 
+  ...                     : ...
+</code></pre></div></div>
+<p>Размер данных секции “<strong>CODE</strong>” в файле составляет всего 1С00h байт, хотя в памяти ее размер на 400h байт больше. В файле, содержится 400h байт данных из секции “<strong>DATA</strong>”, а в памяти размер этой секции на 9DDC00 больше. Теперь примеры конфликтных ситуаций:</p>
+<ol>
+  <li>В секции <strong>CODE</strong> с позиции 401000h совершается безусловный переход (JMP) на смещение 403000h (секция <strong>DATA</strong>). Размер “прыжка” составляет 2000h байт, и если файл загружен в память, то переход осуществится правильно, в противном случае переход произойдет на позицию 403400h ( Image Base + <strong>A</strong> + (<strong>X</strong> +    2000h) - <strong>B</strong>), которая в файле расположена по адресу 2600 (<strong>X</strong> +    2000h).</li>
+  <li>Инструкция, расположенная (в секции <strong>CODE</strong>) по смещению 401200h обладает огромным    желанием воспользоваться некоторыми данными, расположенными по смещению 403400h (секция <strong>DATA</strong>). В файле,    загруженном в память, по этому смещению располагаются именно те данные, которые “<em>жизненно важны</em>” этой    инструкции. Если файл прочитан в буфер, то по этому смещению будет располагаться участок данных, который при загрузке    программы в память, имеет положение 403600h (Image Base + <strong>A</strong> + (<strong>X</strong> + 2200h) - <strong>B</strong>), а в файле, он    имеет положение 2A00h (<strong>X</strong> + 200h + 2200h).</li>
+</ol>
+
+<p>Для избежания подобного рода ошибок, должна быть написана специальная процедура, которая в процессе эмуляции будет проверять, и корректировать все:</p>
+<ol>
+  <li>смещения, к которым происходит обращение эмулируемыми инструкциями</li>
+  <li>изменения в местоположении (после имитации инструкций <strong>RET</strong>, <strong>JUMP</strong> …) разбираемых инструкций</li>
+</ol>
+
+<p>Алгоритм работы таких процедур должен представлять собой:</p>
+<ol>
+ <li>Поиск секции, в которую входит указанное <u>смещение</u>.</li>
+ <li>Расчет местоположения данных, указанных <u>смещением</u>, относительно начала файла:</li>
+  <ul>
+   <li>= Начальное положение данных секции в файле + (Начальное положение данных секции в памяти - <u>смещение</u>)</li>
+  </ul>
+</ol>
+
+<p>Конечно, в большинстве вирусов все данные расположены в пределах одной секции, исключением являются вирусы, которые используют:</p>
+<ul>
+  <li>Генераторы полиморфных расшифровщиков использующие алгоритм разделения декриптора (а/ля <strong>OneHalf</strong>, <strong>CommanderBomber</strong> …).</li>
+  <li>Переход из секции, содержащей точку входа в файл, на ту, в которой расположено вирусное тело (алгоритм передачи управления вирусу, его варианты, так же известны под названием <em>Unknown Entry Point</em> или <em>Entry Point Obscuring</em>).</li>
+  <li>Пермутирующие вирусы, которые разделяют свое тело на постоянное или произвольное количество частей и могут располагать   их в различных секциях.</li>
+</ul>
+
+<p>Одну процедуру эмуляции, очень удобно использовать для “работы” с несколькими типами исполняемых файлов, имеющих, похожую структуру (COM, EXE, PE, NE). Учитывая, тот факт, что “начинка” исполняемых файлов, различных типов, может полностью совпадать (за исключением нескольких моментов) - разработка отдельных процедур, для каждого типа исполняемых файлов является лишней тратой времени. В таком случае, для того, что бы в процессе работы <em>универсального эмулятора</em> определять, какие действия в процессе исследования файла, нужно производить, а какие нельзя, используется параметр, полученный от антивируса - “<strong>тип исполняемого файла</strong>”.</p>
+
+<h3 id="215-дизассемблер">2.1.5. Дизассемблер</h3>
+<p>Информацию об инструкции, которая будет необходима, для последующей имитации ее выполнения, эмулятор получает от дизассемблера. Обязательной информацией, которая должна быть известна об инструкции, является:</p>
+<ol>
+ <li>ее размер</li>
+ <li>способ (метод), необходимый для эмуляции</li>
+  <ul>
+   <li>в том случае, если требуется полная имитация выполнения, инструкция может разбираться дополнительно</li>
+  </ul>
+</ol>
+
+<p>Результатом ошибочного определения размера инструкции, будет являться неправильная имитация работы инструкции. Что в свою очередь, может привести к самым разнообразным последствиям, самым безобидным из которых является обычное зависание программы. Именно по этому, процессу определения типа инструкции, должно уделяться особое внимание.<br />
+Очень часто, инструкции одного типа имеют различный размер и инструкции различных типов имеют схожее строение, например:</p>
+
+<div class="language-nasm highlighter-rouge"><div class="highlight"><pre class="highlight"><code>  <span class="nf">mov</span> <span class="p">[</span><span class="nv">reg</span><span class="p">],</span> <span class="kt">byte</span> <span class="nv">ptr</span> <span class="p">[</span><span class="nv">eREG</span><span class="p">]</span>      <span class="o">-</span> <span class="mh">8AH</span><span class="nv">EX</span><span class="p">,</span> <span class="mi">00</span><span class="nv">regREG</span>
+  <span class="nf">mov</span> <span class="p">[</span><span class="nv">reg</span><span class="p">],</span> <span class="kt">byte</span> <span class="nv">ptr</span> <span class="p">[</span><span class="nb">esp</span><span class="p">]</span>       <span class="o">-</span> <span class="mh">8AH</span><span class="nv">EX</span><span class="p">,</span> <span class="mi">00</span><span class="nv">regESP</span><span class="p">,</span> <span class="mi">00</span><span class="nb">espESP</span>
+  <span class="nf">mov</span> <span class="p">[</span><span class="nv">reg</span><span class="p">],</span> <span class="kt">byte</span> <span class="nv">ptr</span> <span class="p">[</span><span class="nb">ebp</span><span class="p">]</span>       <span class="o">-</span> <span class="mh">8AH</span><span class="nv">EX</span><span class="p">,</span> <span class="mi">01</span><span class="nv">regEBP</span><span class="p">,</span> <span class="mi">00000000</span>
+ 
+  <span class="nf">mov</span> <span class="p">[</span><span class="nv">reg</span><span class="p">],</span> <span class="kt">byte</span> <span class="nv">ptr</span> <span class="p">[</span><span class="nv">eREG</span><span class="o">+</span><span class="kt">byte</span><span class="p">]</span> <span class="o">-</span> <span class="mh">8AH</span><span class="nv">EX</span><span class="p">,</span> <span class="mi">01</span><span class="nv">regREG</span><span class="p">,</span> <span class="kt">byte</span>
+  <span class="nf">mov</span> <span class="p">[</span><span class="nv">reg</span><span class="p">],</span> <span class="kt">byte</span> <span class="nv">ptr</span> <span class="p">[</span><span class="nb">esp</span><span class="o">+</span><span class="kt">byte</span><span class="p">]</span>  <span class="o">-</span> <span class="mh">8AH</span><span class="nv">EX</span><span class="p">,</span> <span class="mi">01</span><span class="nv">regESP</span><span class="p">,</span> <span class="mi">00</span><span class="nb">espESP</span><span class="p">,</span> <span class="kt">byte</span>
+</code></pre></div></div>
+<p>Для упрощения и разработки универсального алгоритма полной имитации выполнения “схожих” инструкций, дизассемблером производится <strong>дополнительный разбор</strong> “родственных” инструкций, которые на время эмуляции объединяются в один тип.<br />
+Я считаю, что очень удобно использовать общий алгоритм эмуляции всех инструкций, которые для указания смещений используют регистры. В этом случае дополнительными параметрами, которые эмулятору необходимо знать, является количество регистров, использующихся для указания смещения и номера этих регистров. Для указания смещения, кроме регистров (или в совокупности с ними) так же может использоваться число (любого размера). Оно так же является параметром, подлежащим разбору.</p>
+
+<p>Рассмотрим примеры инструкций, и “внешний вид” параметров, которые были получены дизассемблером:</p>
+<div class="language-nasm highlighter-rouge"><div class="highlight"><pre class="highlight"><code>    <span class="nf">call</span> <span class="p">[</span><span class="nb">esi</span><span class="o">+</span><span class="nb">edi</span><span class="p">]</span>              <span class="p">:</span> <span class="mi">2</span> <span class="p">(</span><span class="err">кол</span><span class="o">-</span><span class="err">во</span> <span class="err">регистров</span><span class="p">),</span> <span class="mi">6</span> <span class="p">(</span><span class="nb">esi</span><span class="p">),</span> <span class="mi">7</span> <span class="p">(</span><span class="nb">edi</span><span class="p">),</span> <span class="mi">0</span> <span class="p">(</span><span class="err">нет</span> <span class="err">числа</span><span class="p">)</span>
+    <span class="nf">xor</span>  <span class="kt">word</span> <span class="nv">ptr</span> <span class="p">[</span><span class="nb">ebx</span><span class="o">+</span><span class="mi">100</span><span class="p">],</span><span class="nb">ax</span>  <span class="p">:</span> <span class="mi">1</span> <span class="p">(</span><span class="err">кол</span><span class="o">-</span><span class="err">во</span> <span class="err">регистров</span><span class="p">),</span> <span class="mi">3</span> <span class="p">(</span><span class="nb">ebx</span><span class="p">),</span> <span class="mi">100</span> <span class="p">(</span><span class="err">число</span><span class="p">)</span>
+    <span class="nf">mov</span>  <span class="nb">eax</span><span class="p">,</span><span class="kt">dword</span> <span class="nv">ptr</span> <span class="p">[</span><span class="nb">ebp</span><span class="o">+</span><span class="mi">15</span><span class="p">]</span> <span class="p">:</span> <span class="mi">1</span> <span class="p">(</span><span class="err">кол</span><span class="o">-</span><span class="err">во</span> <span class="err">регистров</span><span class="p">),</span> <span class="mi">5</span> <span class="p">(</span><span class="nb">ebp</span><span class="p">),</span> <span class="mi">15</span> <span class="p">(</span><span class="err">число</span><span class="p">)</span>
+</code></pre></div></div>
+<p>Далее стандартная информация о каждой инструкции (размер, <strong>требуемый способ</strong> эмуляции) и дополнительные параметры (если они есть) передаются в эмулятор, который производит процесс имитации выполнения, в соответствии с <strong>требуемым способом</strong> (пункты <a href="#216">2.1.6</a>, <a href="#217">2.1.7</a> и <a href="#218">2.1.8</a>).</p>
+
+<h3 id="216-запуск-инструкций-в-специальной-среде">2.1.6. Запуск инструкций в специальной среде</h3>
+
+<p>Эмулятор формирует участок кода, который представляет собой:</p>
+<div class="language-nasm highlighter-rouge"><div class="highlight"><pre class="highlight"><code>  <span class="nl">instr_buf:</span>    <span class="nf">mov</span>     <span class="kt">dword</span> <span class="nv">ptr</span> <span class="p">[</span><span class="nv">res_stack</span><span class="o">+</span><span class="mi">1</span><span class="p">],</span><span class="nb">esp</span>
+                <span class="nf">mov</span>     <span class="nb">esp</span><span class="p">,</span><span class="kt">dword</span> <span class="nv">ptr</span> <span class="p">[</span><span class="nv">regs</span><span class="o">+</span><span class="mi">4</span><span class="o">*</span><span class="mi">4</span><span class="p">]</span>
+            <span class="nf">...</span> <span class="err">разобранная</span> <span class="err">инструкция</span> <span class="nv">...</span>
+                <span class="nf">mov</span>     <span class="kt">dword</span> <span class="nv">ptr</span> <span class="p">[</span><span class="nv">regs</span><span class="o">+</span><span class="mi">4</span><span class="o">*</span><span class="mi">4</span><span class="p">],</span><span class="nb">esp</span>
+  <span class="nl">res_stack:</span>    <span class="nf">mov</span>     <span class="nb">esp</span><span class="p">,</span> <span class="nv">?</span>
+                <span class="nf">ret</span>
+</code></pre></div></div>
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>  где regs - буфер содержащий значения виртуальных регистров, 
+  соответственно regs+4*4 - значение виртуального регистра ESP
+</code></pre></div></div>
+<p>Сформированный участок:</p>
+<ol>
+  <li>сохраняет значение оригинального стека</li>
+  <li>производит настройку виртуального стека</li>
+  <li>производит запуск разобранной инструкции</li>
+  <li>восстанавливает оригинальное значение стека</li>
+</ol>
+
+<p>Так как мы храним параметры эмулируемого кода в (специальных) переменных, перед запуском этого участка, необходимо будет запомнить состояние регистров эмулятора и установить параметры эмулируемого кода:</p>
+<ul>
+  <li>Значения виртуальных регистров из переменных (буфера <strong>regs</strong>).</li>
+  <li>Значение флагов EFLAGS.</li>
+</ul>
+
+<p>После выполнения сформированного участка останется запомнить новые значения этих параметров и установить значения использовавшиеся эмулятором.    Более ясно понять описанный выше алгоритм, поможет участок кода:</p>
+<div class="language-nasm highlighter-rouge"><div class="highlight"><pre class="highlight"><code> <span class="nf">.data</span>
+  <span class="nf">instr_buf</span>              <span class="nv">db</span> <span class="mi">60</span> <span class="nv">dup</span> <span class="p">(</span><span class="nv">?</span><span class="p">)</span>           <span class="c1">; буфер под эмуляцию стека и разобранную инструкцию</span>
+  <span class="nf">regs</span>                   <span class="nv">db</span> <span class="mi">7</span><span class="o">*</span><span class="mi">4</span> <span class="nv">dup</span> <span class="p">(</span><span class="nv">?</span><span class="p">)</span>          <span class="c1">; буфер для хранения значений виртуальных регистров</span>
+  <span class="nf">temp</span>                   <span class="nv">dd</span> <span class="nv">?</span>                    <span class="c1">; временная переменная для храения EFLAGS эмулятора</span>
+  <span class="nf">flags</span>                  <span class="nv">dd</span> <span class="nv">?</span>                    <span class="c1">; значение EFLAGS исследуемой программы</span>
+ <span class="nf">.code</span>
+ <span class="c1">;</span>
+ <span class="c1">; ecx - размер разобранной инструкции</span>
+ <span class="c1">; esi - смещение разобранной инструкции</span>
+ <span class="c1">;</span>
+  <span class="nl">prep_to_run:</span>   <span class="nf">mov</span>     <span class="nb">edi</span><span class="p">,</span><span class="nv">offset</span> <span class="nv">instr_buf</span>
+                 <span class="nf">mov</span>     <span class="nb">ax</span><span class="p">,</span><span class="mh">2589h</span>
+                 <span class="nf">stosw</span>                            <span class="c1">; перенесем "mov 4 ptr [?],esp"</span>
+ <span class="c1">;               </span>
+                 <span class="nf">mov</span>     <span class="nb">eax</span><span class="p">,</span><span class="nv">offset</span> <span class="nv">instr_buf</span>     <span class="c1">; рассчитаем смещение</span>
+                 <span class="nf">add</span>     <span class="nb">eax</span><span class="p">,</span><span class="nb">ecx</span>                  <span class="c1">; "res_stack+1" (см. выше) и</span>
+                 <span class="nf">add</span>     <span class="nb">eax</span><span class="p">,</span><span class="mi">6</span><span class="o">+</span><span class="mi">6</span><span class="o">+</span><span class="mi">6</span><span class="o">+</span><span class="mi">1</span>              <span class="c1">; перенесем остаток инструкции</span>
+                 <span class="nf">stosd</span>
+ <span class="c1">;               </span>
+                 <span class="nf">mov</span>     <span class="nb">ax</span><span class="p">,</span><span class="mh">258Bh</span>                 <span class="c1">; перенесем инструкцию</span>
+                 <span class="nf">stosw</span>                            <span class="c1">; "mov esp,4 ptr [regs+4*4]"</span>
+                 <span class="nf">mov</span>     <span class="nb">eax</span><span class="p">,</span><span class="nv">offset</span> <span class="p">[</span><span class="nv">regs</span><span class="o">+</span><span class="mi">4</span><span class="o">*</span><span class="mi">4</span><span class="p">]</span>
+                 <span class="nf">stosd</span>
+ <span class="c1">;               </span>
+                 <span class="nf">rep</span>     <span class="nv">movsb</span>                    <span class="c1">; перенесем разобранную</span>
+                                                  <span class="c1">; дизассемблером инструкцию</span>
+ <span class="c1">;               </span>
+                 <span class="nf">mov</span>     <span class="nb">ax</span><span class="p">,</span><span class="mh">2589h</span>                 <span class="c1">; перенесем инструкцию</span>
+                 <span class="nf">stosw</span>                            <span class="c1">; "mov 4 ptr [regs+4*4],esp"</span>
+                 <span class="nf">mov</span>     <span class="nb">eax</span><span class="p">,</span><span class="nv">offset</span> <span class="p">[</span><span class="nv">regs</span><span class="o">+</span><span class="mi">4</span><span class="o">*</span><span class="mi">4</span><span class="p">]</span>
+                 <span class="nf">stosd</span>
+ <span class="c1">;               </span>
+                 <span class="nf">mov</span>     <span class="nb">al</span><span class="p">,</span><span class="mh">0bch</span>                  <span class="c1">; перенесем инструкцию</span>
+                 <span class="nf">stosb</span>                            <span class="c1">; "mov esp,?"</span>
+                 <span class="nf">stosd</span>
+                 <span class="nf">mov</span>     <span class="nb">al</span><span class="p">,</span><span class="mh">0c3h</span>                  <span class="c1">; "поставим последнюю точку"</span>
+                 <span class="nf">stosb</span>                            <span class="c1">; перенесем "ret"</span>
+ <span class="c1">;                       </span>
+ <span class="c1">; "прямой запуск" разобранной инструкции в специальных условиях (карантине)</span>
+ <span class="c1">;</span>
+ <span class="c1">; запомним значение регистров программы-эмулятора в стеке</span>
+ <span class="c1">;</span>
+  <span class="nl">run_instr:</span>     <span class="nf">pushad</span>
+ <span class="c1">;</span>
+ <span class="c1">; запомним значение флагов программы-эмулятора в стеке, перенесем</span>
+ <span class="c1">; в регистр eax, а из него в переменную "temp"</span>
+ <span class="c1">;</span>
+  <span class="nl">save_orig_efl:</span> <span class="nf">pushfd</span>
+                 <span class="nf">mov</span>     <span class="nb">eax</span><span class="p">,</span><span class="kt">dword</span> <span class="nv">ptr</span> <span class="p">[</span><span class="nb">esp</span><span class="p">]</span>
+                 <span class="nf">mov</span>     <span class="kt">dword</span> <span class="nv">ptr</span> <span class="p">[</span><span class="nv">temp</span><span class="p">],</span><span class="nb">eax</span>
+                 <span class="nf">popfd</span>
+ <span class="c1">;</span>
+ <span class="c1">; значение флагов эмулируемого кода перенесем из переменной "flags" в регистр</span>
+ <span class="c1">; eax, а из него в стек использующийся программой-эмулятором</span>
+ <span class="c1">;</span>
+  <span class="nl">set_emul_efl:</span>  <span class="nf">pushfd</span>
+                 <span class="nf">mov</span>     <span class="nb">eax</span><span class="p">,</span><span class="kt">dword</span> <span class="nv">ptr</span> <span class="p">[</span><span class="nv">flags</span><span class="p">]</span>
+                 <span class="nf">mov</span>     <span class="kt">dword</span> <span class="nv">ptr</span> <span class="p">[</span><span class="nb">esp</span><span class="p">],</span><span class="nb">eax</span>
+ <span class="c1">;</span>
+ <span class="c1">; установим значения регистров эмулируемого кода из переменной "regs"</span>
+ <span class="c1">; значение esp не устанавливается, иначе мы рискуем испортить значение флагов</span>
+ <span class="c1">; эмулируемого кода, стек будет перенаправлен в подпрограмме "instr_buf"</span>
+ <span class="c1">;</span>
+                 <span class="nf">mov</span>     <span class="nb">eax</span><span class="p">,</span><span class="kt">dword</span> <span class="nv">ptr</span> <span class="p">[</span><span class="nv">regs</span><span class="o">+</span><span class="mi">0</span><span class="o">*</span><span class="mi">4</span><span class="p">]</span>
+                 <span class="nf">mov</span>     <span class="nb">ecx</span><span class="p">,</span><span class="kt">dword</span> <span class="nv">ptr</span> <span class="p">[</span><span class="nv">regs</span><span class="o">+</span><span class="mi">1</span><span class="o">*</span><span class="mi">4</span><span class="p">]</span>
+                 <span class="nf">mov</span>     <span class="nb">edx</span><span class="p">,</span><span class="kt">dword</span> <span class="nv">ptr</span> <span class="p">[</span><span class="nv">regs</span><span class="o">+</span><span class="mi">2</span><span class="o">*</span><span class="mi">4</span><span class="p">]</span>
+                 <span class="nf">mov</span>     <span class="nb">ebx</span><span class="p">,</span><span class="kt">dword</span> <span class="nv">ptr</span> <span class="p">[</span><span class="nv">regs</span><span class="o">+</span><span class="mi">3</span><span class="o">*</span><span class="mi">4</span><span class="p">]</span>
+                 <span class="nf">mov</span>     <span class="nb">ebp</span><span class="p">,</span><span class="kt">dword</span> <span class="nv">ptr</span> <span class="p">[</span><span class="nv">regs</span><span class="o">+</span><span class="mi">5</span><span class="o">*</span><span class="mi">4</span><span class="p">]</span>
+                 <span class="nf">mov</span>     <span class="nb">esi</span><span class="p">,</span><span class="kt">dword</span> <span class="nv">ptr</span> <span class="p">[</span><span class="nv">regs</span><span class="o">+</span><span class="mi">6</span><span class="o">*</span><span class="mi">4</span><span class="p">]</span>
+                 <span class="nf">mov</span>     <span class="nb">edi</span><span class="p">,</span><span class="kt">dword</span> <span class="nv">ptr</span> <span class="p">[</span><span class="nv">regs</span><span class="o">+</span><span class="mi">7</span><span class="o">*</span><span class="mi">4</span><span class="p">]</span>
+ <span class="c1">;</span>
+ <span class="c1">; инструкция "popfd" установит значение флагов эмулируемого кода, которое мы сохраняли выше</span>
+ <span class="c1">;</span>
+                 <span class="nf">popfd</span>
+                 <span class="nf">call</span>    <span class="nv">instr_buf</span>                <span class="c1">; запустим на исполнение cформированный участок</span>
+ <span class="c1">;</span>
+ <span class="c1">; сохраним новые значения регистров эмулируемого кода в переменной "regs"</span>
+ <span class="c1">;</span>
+                 <span class="nf">mov</span>     <span class="kt">dword</span> <span class="nv">ptr</span> <span class="p">[</span><span class="nv">regs</span><span class="o">+</span><span class="mi">0</span><span class="o">*</span><span class="mi">4</span><span class="p">],</span><span class="nb">eax</span>
+                 <span class="nf">mov</span>     <span class="kt">dword</span> <span class="nv">ptr</span> <span class="p">[</span><span class="nv">regs</span><span class="o">+</span><span class="mi">1</span><span class="o">*</span><span class="mi">4</span><span class="p">],</span><span class="nb">ecx</span>
+                 <span class="nf">mov</span>     <span class="kt">dword</span> <span class="nv">ptr</span> <span class="p">[</span><span class="nv">regs</span><span class="o">+</span><span class="mi">2</span><span class="o">*</span><span class="mi">4</span><span class="p">],</span><span class="nb">edx</span>
+                 <span class="nf">mov</span>     <span class="kt">dword</span> <span class="nv">ptr</span> <span class="p">[</span><span class="nv">regs</span><span class="o">+</span><span class="mi">3</span><span class="o">*</span><span class="mi">4</span><span class="p">],</span><span class="nb">ebx</span>
+                 <span class="nf">mov</span>     <span class="kt">dword</span> <span class="nv">ptr</span> <span class="p">[</span><span class="nv">regs</span><span class="o">+</span><span class="mi">5</span><span class="o">*</span><span class="mi">4</span><span class="p">],</span><span class="nb">ebp</span>
+                 <span class="nf">mov</span>     <span class="kt">dword</span> <span class="nv">ptr</span> <span class="p">[</span><span class="nv">regs</span><span class="o">+</span><span class="mi">6</span><span class="o">*</span><span class="mi">4</span><span class="p">],</span><span class="nb">esi</span>
+                 <span class="nf">mov</span>     <span class="kt">dword</span> <span class="nv">ptr</span> <span class="p">[</span><span class="nv">regs</span><span class="o">+</span><span class="mi">7</span><span class="o">*</span><span class="mi">4</span><span class="p">],</span><span class="nb">edi</span>
+ <span class="c1">;</span>
+ <span class="c1">; новое значение флагов эмулируемого кода запомним в стеке, затем перенесем</span>
+ <span class="c1">; в регистр eax и сохраним в переменной "flags"</span>
+ <span class="c1">;</span>
+  <span class="nl">save_emul_efl:</span> <span class="nf">pushfd</span>
+                 <span class="nf">mov</span>     <span class="nb">eax</span><span class="p">,</span><span class="kt">dword</span> <span class="nv">ptr</span> <span class="p">[</span><span class="nb">esp</span><span class="p">]</span>
+                 <span class="nf">mov</span>     <span class="kt">dword</span> <span class="nv">ptr</span> <span class="p">[</span><span class="nv">flags</span><span class="p">],</span><span class="nb">eax</span>
+                 <span class="nf">popfd</span>
+ <span class="c1">;</span>
+ <span class="c1">; установим значение флагов программы-эмулятора из переменной "temp"</span>
+ <span class="c1">;</span>
+  <span class="nl">set_orig_efl:</span>  <span class="nf">pushfd</span>
+                 <span class="nf">mov</span>     <span class="nb">eax</span><span class="p">,</span><span class="kt">dword</span> <span class="nv">ptr</span> <span class="p">[</span><span class="nv">temp</span><span class="p">]</span>
+                 <span class="nf">mov</span>     <span class="kt">dword</span> <span class="nv">ptr</span> <span class="p">[</span><span class="nb">esp</span><span class="p">],</span><span class="nb">eax</span>
+                 <span class="nf">popfd</span>
+ <span class="c1">;</span>
+ <span class="c1">; восстановим значение регистров программы-эмулятора</span>
+ <span class="c1">;</span>
+                 <span class="nf">popad</span>
+             <span class="nf">...</span> <span class="err">перевод</span> <span class="err">указателя</span> <span class="err">на</span> <span class="err">следующую</span> <span class="err">инструкцию</span> <span class="nv">...</span>
+</code></pre></div></div>
+<h3 id="217-полная-имитация-исполнения-инструкций">2.1.7. Полная имитация исполнения инструкций</h3>
+
+<p>Существуют три основные причины, по которым возникает необходимость использования полной имитации выполнения инструкций:</p>
+
+<p><strong>Инструкция для своей работы использует данные, расположенные по определенным смещениям.</strong></p>
+
+<p>Программы (а так же все их составные части (данные)), при загрузке в память имеют строго определенное положение. Если же программа переносится в буфер и исследуется, ее расположение будет отличаться от “оригинального”. Если не предпринимать никаких действий, эмуляция инструкций, использующих в своей работе данные, расположенные по определенным смещениям, будет выполняться неправильно. Исключением могут быть случаи, когда:</p>
+<ol>
+  <li>Происходит обращение к данным, расположенным в стеке.</li>
+  <li>В программе используются процедуры для подсчета переменной, которая является разницей между текущим и оригинальным    местоположением программы (delta value). Прибавив    подсчитанную таким образом величину к любому смещению можно получить “текущее” местоположение необходимых данных в    памяти.    </li>
+</ol>
+
+<p>Таким образом, перед эмуляцией таких инструкций необходимо проверить, является ли смещение “приемлемым”, если нет, то подсчитать значение смещения, для текущего положения программы в памяти (подробнее). А только после этого выполнять действия являющиеся аналогом работы инструкции.</p>
+
+<p><strong>Инструкции изменяют местоположение исследуемого кода.</strong></p>
+
+<p>В эмуляторах для хранения местоположения используются регистры или переменные (см. выше), по этой причине изменение их значений должно происходить “вручную”.<br />
+Примером таких инструкций являются: <strong>CALL</strong>, <strong>JMP</strong>, <strong>LOOP</strong>, <strong>RET</strong> …</p>
+
+<p><strong>В случае неправильного использования, могут вызвать ошибку …</strong></p>
+
+<p>… которая приведет к зависанию программы.<br />
+В этом случае необходимы специальные процедуры, которые выполняют всевозможные проверки, для того, что бы в случае возникновения ошибки, прекратить процесс эмуляции программы, не выполняя инструкцию. Если выполнение инструкции с данными параметрами пройдет успешно, то можно произвести прямой запуск или имитировать выполнение.<br />
+  В качестве примера таких инструкций можно привести <strong>DIV</strong>/<strong>IDIV</strong>.</p>
+
+<p>Полной имитации исполнения требуют инструкции с самым разнообразным назначением, соответственно процедуры, необходимые для эмуляции работы таких инструкций могут коренным образом отличаться друг от друга. По этой причине составить алгоритм разработки процедур, не представляется возможным. Несмотря на это досадное упущение, нас не может не радовать тот факт, что для большинства инструкций, разработка эмуляционных процедур является достаточно тривиальной задачей. Конечно, исключения есть везде, но их очень мало. В качестве примера такого исключения можно привести инструкции <strong>DIV</strong>/<strong>IDIV</strong>.<br />
+  Это именно та часть, которую Вам придется осмысливать самостоятельно. В помощь я могу только привести примеры нескольких уже реализованных процедур:</p>
+
+<div class="language-nasm highlighter-rouge"><div class="highlight"><pre class="highlight"><code>  <span class="c1">;</span>
+ <span class="c1">; Пусть регистр esi содержит смещение разбираемой инструкции (EIP) в "антивирусном буфере"</span>
+ <span class="c1">;</span>
+ <span class="nf">.data</span>
+  <span class="nf">regs</span>                   <span class="nv">db</span> <span class="mi">7</span><span class="o">*</span><span class="mi">4</span> <span class="nv">dup</span> <span class="p">(</span><span class="nv">?</span><span class="p">)</span>          <span class="c1">; буфер для хранения значений виртуальных регистров</span>
+ <span class="nf">.code</span>
+ <span class="c1">;</span>
+ <span class="c1">; * * * Имитации исполнения инструкции "ret" [0C3h]</span>
+ <span class="c1">;</span>
+  <span class="nf">emul_ret</span>               <span class="nv">proc</span>
+ <span class="c1">;</span>
+                 <span class="nf">push</span>    <span class="nb">eax</span>
+                 <span class="nf">mov</span>     <span class="nb">esi</span><span class="p">,</span><span class="kt">dword</span> <span class="nv">ptr</span> <span class="p">[</span><span class="nv">regs</span><span class="o">+</span><span class="mi">4</span><span class="o">*</span><span class="mi">4</span><span class="p">]</span> <span class="c1">; расположение свободного места в буфере виртуального стека</span>
+                 <span class="nf">lodsd</span>                            <span class="c1">; прочтем в eax dword из стека</span>
+                 <span class="nf">add</span>     <span class="kt">dword</span> <span class="nv">ptr</span> <span class="p">[</span><span class="nv">regs</span><span class="o">+</span><span class="mi">4</span><span class="o">*</span><span class="mi">4</span><span class="p">],</span><span class="mi">4</span>   <span class="c1">; "уберем" значение из стека</span>
+                 <span class="nf">xchg</span>    <span class="nb">esi</span><span class="p">,</span><span class="nb">eax</span>                  <span class="c1">; изменим EIP на значение</span>
+                 <span class="nf">pop</span>     <span class="nb">eax</span>
+                 <span class="nf">ret</span>
+  <span class="nf">endp</span>
+ <span class="c1">;                                                </span>
+ <span class="c1">; * * * Имитации исполнения инструкции "call dword" [0E8h, dword]</span>
+ <span class="c1">;</span>
+  <span class="nf">emul_call</span>              <span class="nv">proc</span>
+ <span class="c1">;</span>
+                 <span class="nf">push</span>    <span class="nb">eax</span> <span class="nb">edi</span>
+                 <span class="nf">mov</span>     <span class="nb">eax</span><span class="p">,</span><span class="nb">esi</span>                  <span class="c1">; смещение инструкции call</span>
+                 <span class="nf">add</span>     <span class="nb">eax</span><span class="p">,</span><span class="mi">5</span>                    <span class="c1">; смещение инструкции следующей за call</span>
+ <span class="c1">;</span>
+                 <span class="nf">mov</span>     <span class="nb">edi</span><span class="p">,</span><span class="kt">dword</span> <span class="nv">ptr</span> <span class="p">[</span><span class="nv">regs</span><span class="o">+</span><span class="mi">4</span><span class="o">*</span><span class="mi">4</span><span class="p">]</span> <span class="c1">; edi = местоположение в буфере виртуального стека</span>
+                 <span class="nf">stosd</span>                            <span class="c1">; перенесем смещение из eax в буфер виртуального стека</span>
+                 <span class="nf">sub</span>     <span class="kt">dword</span> <span class="nv">ptr</span> <span class="p">[</span><span class="nv">regs</span><span class="o">+</span><span class="mi">4</span><span class="o">*</span><span class="mi">4</span><span class="p">],</span><span class="mi">4</span>   <span class="c1">; изменим указатель в буфере (что бы не затерли смещение)</span>
+ <span class="c1">;</span>
+                 <span class="nf">push</span>    <span class="nb">esi</span>
+                 <span class="nf">pop</span>     <span class="nb">edi</span>                      <span class="c1">; edi = esi</span>
+                 <span class="nf">add</span>     <span class="nb">esi</span><span class="p">,</span><span class="kt">dword</span> <span class="nv">ptr</span> <span class="p">[</span><span class="nb">edi</span><span class="o">+</span><span class="mi">1</span><span class="p">]</span>    <span class="c1">; изменим EIP: добавим dword указанный в call'е</span>
+                 <span class="nf">pop</span>     <span class="nb">edi</span> <span class="nb">eax</span>
+                 <span class="nf">ret</span>
+  <span class="nf">endp</span>
+</code></pre></div></div>
+<p>В процессе работы данных процедур, было изменено EIP относительно буфера, в котором находится эмулируемая программа. Если разбирается файл формата PE, то не забывайте подсчитать EIP, которое программа имеет в памяти, когда загружается операционной системой.</p>
+
+<p><strong>Инструкции, использующие регистры, для указания смещений.</strong></p>
+
+<p>Процесс эмуляции таких инструкций, целесообразно производить в два этапа.<br />
+<strong>Первый этап</strong>, является общим и не зависит от типа инструкции. Он представляет собой:</p>
+<ol>
+  <li>цикл, который подсчитывает смещение, полученное в результате сложения значений регистров, использующихся в    инструкции для указания смещения.</li>
+  <li>проверку полученного смещения</li>
+</ol>
+
+<div class="language-nasm highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nf">.data</span>
+  <span class="nf">dregs</span>                  <span class="nv">dd</span> <span class="mi">9</span><span class="o">*</span><span class="mi">4</span> <span class="nv">dup</span> <span class="p">(</span><span class="nv">?</span><span class="p">)</span>          <span class="c1">; буфер для хранения дополнительной информации о инструкции</span>
+  <span class="nf">regs</span>                   <span class="nv">db</span> <span class="mi">7</span><span class="o">*</span><span class="mi">4</span> <span class="nv">dup</span> <span class="p">(</span><span class="nv">?</span><span class="p">)</span>          <span class="c1">; буфер для хранения значений виртуальных регистров</span>
+ <span class="nf">.code</span>
+ <span class="c1">; буфер dregs содержит примерно следующие данные:</span>
+ <span class="c1">;  dregs +  000    : количество регистров (допустим n) использующихся в инструкции</span>
+ <span class="c1">;  dregs +  004    : номер регистра 1</span>
+ <span class="c1">;  dregs +  008    : номер регистра 2</span>
+ <span class="c1">;  dregs +  n*4    : номер регистра n</span>
+ <span class="c1">;  dregs + (n+1)*4 : число использующеся для указания смещения, иначе = 0</span>
+ <span class="c1">;</span>
+                 <span class="nf">sub</span>     <span class="nb">ebx</span><span class="p">,</span><span class="nb">ebx</span>
+                 <span class="nf">mov</span>     <span class="nb">esi</span><span class="p">,</span><span class="nv">offset</span> <span class="nv">dregs</span>
+                 <span class="nf">lodsd</span>
+                 <span class="nf">xchg</span>    <span class="nb">eax</span><span class="p">,</span><span class="nb">ecx</span>
+  <span class="nl">count_sum_lp:</span>  <span class="nf">lodsd</span>
+                 <span class="nf">mov</span>     <span class="nb">edx</span><span class="p">,</span><span class="mi">4</span>
+                 <span class="nf">mul</span>     <span class="nb">edx</span>
+                 <span class="nf">add</span>     <span class="nb">ebx</span><span class="p">,</span><span class="kt">dword</span> <span class="nv">ptr</span> <span class="p">[</span><span class="nv">regs</span><span class="o">+</span><span class="nb">eax</span><span class="p">]</span>
+                 <span class="nf">loop</span>    <span class="nv">count_sum_lp</span>
+                 <span class="nf">lodsd</span>
+                 <span class="nf">add</span>     <span class="nb">ebx</span><span class="p">,</span><span class="nb">eax</span>
+</code></pre></div></div>
+<p>Имитируя исполнение инструкций, которые обращаются по смещениям, есть очень большой риск ошибки в расчете смещения. Эта ошибка может быть следствием:</p>
+<ol>
+  <li>Недоработки (или ошибки) анализатора кода, который пропустил процедуру подсчета delta value или другую важную особенность кода.</li>
+  <li>Неправильно проэмулированного участка кода, который предназначен для обмана эмуляторов антивирусных программ (так называемые анти-эвристические/отладочные трюки).</li>
+  <li>Непредвиденной (разработчиками) ошибки в программе.</li>
+</ol>
+
+<p>В случае если одно или несколько из этих утверждений правда, при обращении к такому смещению будет изменен код одной из частей антивируса или значение важных переменных, “работать” с которыми может только антивирус, а не никак не исследуемая программа. Результатом такой ошибки может быть зависание антивируса, обнаружение вируса в здоровом файле, неправильное лечение файла (порча) и т.д.<br />
+Стоит заметить, что исследуемая программа может пользоваться данными только из “антивирусного буфера” или “виртуального стека”. А это значит, что смещение должно находиться в пределах этих переменных.</p>
+
+<p>Во <strong>втором этапе</strong> происходит определение типа инструкции и выполнение действий являющихся аналогом ее работы. Этот этап является индивидуальным, для каждой инструкции.</p>
+
+<h3 id="218-твикс">2.1.8. Твикс</h3>
+<p>Для имитации выполнения большинства инструкций используются предыдущие способы, но существуют и те, для которых “выгоднее” использовать комбинацию этих способов.<br />
+В качестве примера рассмотрим инструкции “условного перехода” (jb, jnb, je, jne, jbe, ja, js, jns и т.д.). Конечно, для этих инструкций можно использовать полную имитацию. В этом случае, для каждой разновидности “перехода”, придется писать свою процедуру, потому что в каждом типе используется проверка состояния разнообразных флагов. Используя же “комбинированный” метод, можно написать компактную и универсальную процедуру для всех типов переходов.</p>
+
+<p>Рассмотрим алгоритм работы такой процедуры:</p>
+
+<ol>
+  <li>
+    <p>Процесс запуска инструкции в специальных условиях:</p>
+
+    <p>1.1. Сформируем участок кода следующего вида:</p>
+
+    <div class="language-nasm highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nf">...</span> <span class="err">разобранная</span> <span class="err">инструкция</span> <span class="p">(</span><span class="err">без</span><span class="p">)</span><span class="err">условного</span> <span class="err">перехода</span><span class="p">,</span>
+    <span class="err">но</span> <span class="err">не</span> <span class="err">к</span> <span class="err">оригинальной</span> <span class="err">метке,</span> <span class="err">а</span> <span class="err">к</span> <span class="nf">_label</span> <span class="nv">...</span>
+    <span class="nf">inc</span>    <span class="nb">eax</span>
+<span class="nl">_label:</span>    <span class="nf">ret</span>
+</code></pre></div>    </div>
+
+    <p>1.2. Установим значение флагов эмулируемого кода и запустим на исполнение сформированный участок (перед запуском предварительно обнулив значение регистра eax).<br />
+1.3. В том случае, если переход выполнится, значение eax будет равно нулю.</p>
+  </li>
+  <li>
+    <p>Процесс имитации выполнения:</p>
+
+    <p>2.1. В том случае если переход выполнился, необходимо изменить смещение исследуемого кода. Для этого рассмотрим второй байт инструкции, который содержит данные, необходимые для вычисления нового смещения.</p>
+  </li>
+</ol>
+
+<p>Реализация алгоритма:</p>
+<div class="language-nasm highlighter-rouge"><div class="highlight"><pre class="highlight"><code> <span class="nf">.data</span>
+  <span class="nf">instr_buf</span>              <span class="nv">db</span> <span class="mi">60</span> <span class="nv">dup</span> <span class="p">(</span><span class="nv">?</span><span class="p">)</span>
+  <span class="nf">regs</span>                   <span class="nv">db</span> <span class="mi">7</span><span class="o">*</span><span class="mi">4</span> <span class="nv">dup</span> <span class="p">(</span><span class="nv">?</span><span class="p">)</span>          <span class="c1">; буфер для хранения значений виртуальных регистров</span>
+  <span class="nf">flags</span>                  <span class="nv">dd</span> <span class="nv">?</span>                    <span class="c1">; значение EFLAGS исследуемой программы</span>
+ <span class="nf">.code</span>
+ <span class="c1">; * * * Имитация исполнения "условных" и "безусловных" переходов:</span>
+ <span class="c1">;</span>
+ <span class="c1">;       jb, jnb, je, jne, jbe, ja, js, jns, jmp _ byte</span>
+ <span class="c1">;</span>
+ <span class="c1">; регистр esi содержит смещение разбираемой инструкции (EIP) в "антивирусном буфере"</span>
+ <span class="c1">;</span>
+  <span class="nf">emul_jmp_byte</span>          <span class="nv">proc</span>
+ <span class="c1">;</span>
+                 <span class="nf">push</span>    <span class="nb">esi</span>
+                 <span class="nf">pop</span>     <span class="nb">edi</span>                     <span class="c1">; edi = esi</span>
+                 <span class="nf">mov</span>     <span class="nb">ah</span><span class="p">,</span><span class="mi">1</span>
+                 <span class="nf">mov</span>     <span class="nb">al</span><span class="p">,</span><span class="kt">byte</span> <span class="nv">ptr</span> <span class="p">[</span><span class="nb">edi</span><span class="p">]</span>       <span class="c1">; ax: j?? $+2</span>
+                 <span class="nf">push</span>    <span class="nb">edi</span>
+                 <span class="nf">mov</span>     <span class="nb">edi</span><span class="p">,</span><span class="nv">offset</span> <span class="nv">instr_buf</span>
+                 <span class="nf">stosw</span>
+                 <span class="nf">mov</span>     <span class="nb">ax</span><span class="p">,</span><span class="mh">0c340h</span>               <span class="c1">; ax: inc eax, ret;</span>
+                 <span class="nf">stosw</span>
+                 <span class="nf">pop</span>     <span class="nb">edi</span>
+ <span class="c1">;               </span>
+  <span class="nl">jmp_ser_eflag:</span> <span class="nf">pushfd</span>                          <span class="c1">; запомним оригинальное состояние флагов</span>
+                 <span class="nf">pushfd</span>
+                 <span class="nf">mov</span>     <span class="nb">eax</span><span class="p">,</span><span class="kt">dword</span> <span class="nv">ptr</span> <span class="p">[</span><span class="nv">flags</span><span class="p">]</span>   <span class="c1">; eax - состояние флагов эмулируемой программы</span>
+                 <span class="nf">mov</span>     <span class="kt">dword</span> <span class="nv">ptr</span> <span class="p">[</span><span class="nb">esp</span><span class="p">],</span><span class="nb">eax</span>     
+                 <span class="nf">sub</span>     <span class="nb">eax</span><span class="p">,</span><span class="nb">eax</span>                 <span class="c1">; eax = 0</span>
+                 <span class="nf">popfd</span>                           <span class="c1">; установим состояние флагов</span>
+                 <span class="nf">call</span>    <span class="nv">instr_buf</span>               <span class="c1">; запустим сформированный участок</span>
+                 <span class="nf">popfd</span>                           <span class="c1">; вспомним состояние флагов</span>
+                 <span class="nf">or</span>      <span class="nb">eax</span><span class="p">,</span><span class="nb">eax</span>
+                 <span class="nf">jz</span>      <span class="nv">jmpb_goto</span>               <span class="c1">; если инструкция выполнилась ...</span>
+                 <span class="nf">ret</span>
+ <span class="c1">;               </span>
+  <span class="nl">jmpb_goto:</span>     <span class="nf">cmp</span>     <span class="kt">byte</span> <span class="nv">ptr</span> <span class="p">[</span><span class="nb">edi</span><span class="o">+</span><span class="mi">1</span><span class="p">],</span><span class="mh">07fh</span>   <span class="c1">; если значение &lt; 7F</span>
+                 <span class="nf">jna</span>     <span class="nv">jmpb_down</span>               <span class="c1">; значит переход ниже</span>
+  <span class="nl">jmpb_up:</span>       <span class="nf">sub</span>     <span class="nb">al</span><span class="p">,</span><span class="kt">byte</span> <span class="nv">ptr</span> <span class="p">[</span><span class="nb">edi</span><span class="o">+</span><span class="mi">1</span><span class="p">]</span>     <span class="c1">; рассчитаем значение для перехода выше</span>
+                 <span class="nf">sub</span>     <span class="nb">esi</span><span class="p">,</span><span class="nb">eax</span>                 <span class="c1">; изменим EIP</span>
+                 <span class="nf">ret</span>
+  <span class="nl">jmpb_down:</span>     <span class="nf">mov</span>     <span class="nb">al</span><span class="p">,</span><span class="kt">byte</span> <span class="nv">ptr</span> <span class="p">[</span><span class="nb">edi</span><span class="o">+</span><span class="mi">1</span><span class="p">]</span>     <span class="c1">; рассчитаем значение для "спуска"</span>
+                 <span class="nf">add</span>     <span class="nb">esi</span><span class="p">,</span><span class="nb">eax</span>                 <span class="c1">; изменим EIP</span>
+             <span class="nf">...</span> <span class="err">подсчет</span> <span class="err">местоположения</span><span class="p">,</span> <span class="err">при</span> <span class="err">загрузке</span> <span class="err">в</span> 
+                 <span class="err">память</span> <span class="err">операционной</span> <span class="err">системой</span> <span class="err">(если</span> <span class="err">необходимо)</span> <span class="nf">...</span>
+                 <span class="nf">ret</span>
+  <span class="nf">endp</span>
+</code></pre></div></div>
+<h2 id="3-заключение">3. Заключение</h2>
+<p>Первая (beta) версия данной статьи была опубликована на ресурсе <a href="http://www.wasm.in/"><strong>wasm.ru</strong></a>. Вполне возможно появление новых, дополненных версий этой статьи. Я так же надеюсь на конструктивную критику и советы.</p>
+
+<p>Все рассуждения и примеры приводились на языке ассемблера, для исполняемых файлов PortableExecutables.</p>
+
+<p>В качестве примера для ознакомления рекомендуется <a href="https://github.com/andrei-ag/xpl_av">Explosion Antivirus</a>, части исходных текстов которого, были использованы в статье.</p>
+
+<p>Выпущена: 15 февраля 2004<br />
+Автор: <a href="https://github.com/andrei-ag/">Andrei Agafonov</a><br />
+Рецензирование: Команда UinC.RU, отдельное спасибо Dr.Golova<br />
+Источник: <a href="https://web.archive.org/web/20051215194308/http://uinc.ru:80/articles/47/">http://www.uinc.ru</a></p>]]></content><author><name>Andrei Agafonov</name></author><category term="antivirus" /><category term="emulation" /><category term="assembly" /><category term="x86" /><category term="emulator" /><category term="polymorphic" /><category term="mte" /><category term="smeg" /><category term="onehalf" /><category term="delta-value" /><category term="anti-emulation" /><summary type="html"><![CDATA[О работе антивирусных эмуляторов кода с примерами на ассемблере под Win32.]]></summary></entry><entry xml:lang="ru"><title type="html">Анализаторы кода в антивирусах</title><link href="http://localhost:4000/antivirus/code-analysis/assembly/antivirus-code-analysis/" rel="alternate" type="text/html" title="Анализаторы кода в антивирусах" /><published>2004-02-15T00:00:00+03:00</published><updated>2004-02-15T00:00:00+03:00</updated><id>http://localhost:4000/antivirus/code-analysis/assembly/antivirus-code-analysis</id><content type="html" xml:base="http://localhost:4000/antivirus/code-analysis/assembly/antivirus-code-analysis/"><![CDATA[<h2 id="1-вступление"><strong>1. Вступление</strong></h2>
+<p>Данная статья посвящена технологии <em>анализатора кода</em>, которая используется в антивирусных программах. Можно сказать, что это продолжение моей <a href="/antivirus/emulation/assembly/code-emulation-techniques/">предыдущей статьи</a>, которая была посвящена основам разработки эмуляторов программного кода.</p>
+
+<p>Я надеюсь, что Вы имеете понятие о принципе разработки антивирусных программ и о технологиях, которые используются в этом типе программного обеспечения. Потому, что без начальных (хотя бы) знаний понять что-то в этой статье будет очень и очень проблематично.</p>
+
+<p>Все рассуждения и примеры будут приводиться на ассемблере, для исполняемых файлов формата Portable Executables.</p>
+
+<h2 id="2-технология-анализа-кода">2. Технология анализа кода</h2>
+
+<p><em>Анализатор кода</em> - предназначен для учета особенностей исследуемого (эмулируемого) кода и передачи выявленных особенностей в эмулятор. Обычно кодо-анализатор представляет собой несколько процедур, которые используются:</p>
+<ul>
+  <li>перед вызовом эмулятора (сбор первоначальных сведений о участке кода, который будет “запущен на исполнение”)</li>
+  <li>в процессе эмуляции участка кода (выявление особенностей разбираемого кода)</li>
+</ul>
+
+<p>Начнем разбор технологии, с процедур, которые используются в эмуляторе. В связи с этим, рассмотрим порядок его работы:</p>
+<ul>
+ <li><a href="#21">Инициализация анализатора кода</a></li>
+ <li>Инициализация переменных, содержащих информацию об исследуемом коде (обнуление значений виртуальных регистров,
+     настройка стека).</li>
+ <li>Установка параметров переданных антивирусом в эмулятор (размер исследуемого кода, его местоположение в памяти)</li>
+ <li>Начало цикла эмуляции участка кода, по одной инструкции:</li>
+  <ol>
+   <li><a href="#22">Запуск эвристического анализатора кода.</a> В том случае если в текущей позиции не было обнаружено эвристической маски, перейдем к пункту 3 (второй пропускаем).</li>
+   <li><a href="#23">Поиск вирусных сигнатур</a> с текущего участка кода, в том случае если процесс прошел успешно, работа
+       эмулятора завершается. Данные об обнаруженной вирусной записи передаются в антивирус.</li>
+   <li><a href="#24">&quot;Поиск&quot; процедуры подсчета &quot;delta value&quot;</a>.</li>
+   <li>Разбор инструкции дизассемблером. В том случае, если во время работы была допущена ошибка (например, встретилась
+       неизвестная команда), эмулятор завершает работу.</li>
+   <li>Разбор эмулятором, параметров инструкции (размер инструкции, используемые регистры, <u>тип имитации исполнения</u>)
+       полученной от дизассемблера. В зависимости от действий необходимых для имитации исполнения инструкции (параметр,
+       который определяет дизассемблер) переходим к пункту 6 или 7.</li>
+   <li>Запуск инструкции в специальных условиях («карантине») и сохранение результатов работы (состояния регистров, EFLAGS).
+       Переходим к пункту 8.</li>
+   <li>Полная имитация выполнения инструкции.</li>
+   <li>Перевод указателя на следующую инструкцию.</li>
+   <li>Если в ходе эмуляции инструкции не произошло ошибок, и требуемый участок кода не был исследован до конца, перейдем к
+       началу цикла.</li></ol></ul>
+
+<p><strong>В данной статье</strong> мы рассматриваем антивирус, эмулятор которого предназначен для имитации выполнения небольших участков кода. Если тело вируса зашифровано, эмулятор расшифровывает его и анализатор кода производит поиск в расшифрованном коде всех известных вирусных сигнатур. Это является основной и единственной задачей эмулятора. В эмуляторе отсутствует вызов эвристического анализатора кода, по этому анализ кода и выявление в нем свойственных вирусам участков (поиск новых вирусов) не производится.</p>
+
+<h3 id="21-инициализация-анализатора-кода">2.1. Инициализация анализатора кода</h3>
+
+<p>Инициализация, в данном случае подразумевает собой установку начальных значений всем переменным, которые используются анализатором для хранения в них информации различного рода и последующей их передачи в <strong>эмулятор</strong>.</p>
+
+<div class="language-nasm highlighter-rouge"><div class="highlight"><pre class="highlight"><code> <span class="nf">.data</span>
+ <span class="c1">;</span>
+ <span class="c1">; тип значений хранящихся в регистрах, в соотвествии с их номерами, например:</span>
+ <span class="c1">;  _regs+000 - eax</span>
+ <span class="c1">;  _regs+001 - ecx</span>
+ <span class="c1">;   ...</span>
+ <span class="c1">;  _regs+007 - edi</span>
+ <span class="c1">;</span>
+ <span class="c1">; типы: 2 - смещение расположенное в виртуальном стеке</span>
+ <span class="c1">;       1 - delta value или заготовка его последующего расчета</span>
+ <span class="c1">;       0 - все остальные значения не подходящие типам 1 и 2</span>
+ <span class="c1">;</span>
+ <span class="c1">;       подробнее о типах</span>
+ <span class="c1">;</span>
+  <span class="nf">_regs</span>                 <span class="nv">db</span> <span class="mi">8</span> <span class="nv">dup</span> <span class="p">(</span><span class="nv">?</span><span class="p">)</span>   
+ <span class="c1">;</span>
+ <span class="c1">; переменные, необходимые анализатору для поиска процедур подсчета delta value (см. ниже)</span>
+ <span class="c1">;</span>
+ <span class="c1">; ca_ip_stage    - номер этапа, на котором находится эта функция кодо-анализатора</span>
+ <span class="c1">; ca_ip_instr    - количество инструкций проверенных после вызова "CALL"</span>
+ <span class="c1">; ca_ip_call_off - смещение полученной после вызова "CALL"</span>
+ <span class="c1">;</span>
+  <span class="nf">ca_ip_stage</span>            <span class="nv">db</span> <span class="nv">?</span>
+  <span class="nf">ca_ip_instr</span>            <span class="nv">db</span> <span class="nv">?</span>
+  <span class="nf">ca_ip_call_off</span>         <span class="nv">dd</span> <span class="nv">?</span>
+ <span class="nf">.code</span>
+ <span class="c1">;</span>
+  <span class="nf">ca_init</span>        <span class="nv">proc</span>
+ <span class="c1">;                                                                              </span>
+                 <span class="nf">push</span>   <span class="nb">eax</span> <span class="nb">ecx</span> <span class="nb">edi</span>
+                 <span class="nf">mov</span>    <span class="kt">word</span> <span class="nv">ptr</span> <span class="p">[</span><span class="nv">ca_ip_stage</span><span class="p">],</span><span class="mi">0</span> <span class="c1">; инициализация переменных:</span>
+                                                 <span class="c1">; "ca_ip_stage" и "ca_ip_instr"</span>
+  <span class="nl">reg_analyze:</span>   <span class="nf">sub</span>    <span class="nb">eax</span><span class="p">,</span><span class="nb">eax</span>
+                 <span class="nf">sub</span>    <span class="nb">ecx</span><span class="p">,</span><span class="nb">ecx</span>
+                 <span class="nf">mov</span>    <span class="nb">cl</span><span class="p">,</span><span class="mi">8</span>
+                 <span class="nf">mov</span>    <span class="nb">edi</span><span class="p">,</span><span class="nv">offset</span> <span class="nv">_regs</span>
+  <span class="nl">ra_init_loop:</span>  <span class="nf">stosb</span>
+                 <span class="nf">loop</span>   <span class="nv">ra_init_loop</span>
+                 <span class="nf">mov</span>    <span class="kt">byte</span> <span class="nv">ptr</span> <span class="p">[</span><span class="nv">_regs</span><span class="o">+</span><span class="mi">4</span><span class="p">],</span><span class="mi">2</span>     <span class="c1">; регистр esp, в любом случае будет</span>
+                                                 <span class="c1">; указывать на данные внутри</span>
+                                                 <span class="c1">; виртуального стека</span>
+                 <span class="nf">pop</span>    <span class="nb">edi</span> <span class="nb">ecx</span> <span class="nb">eax</span>
+                 <span class="nf">ret</span>
+  <span class="nf">endp</span>
+</code></pre></div></div>
+
+<h3 id="22-эвристический-анализ">2.2. Эвристический анализ</h3>
+
+<p><em>Эвристические анализаторы кода</em>, предназначены для определения новых типов вирусов, т.е. тех, информации о которых нет в базе антивируса. Это необходимо для того, что бы пользователь мог обнаружить у себя на компьютере файлы, зараженные новыми типами вирусов и выслать их разработчикам программы (для включения их в последующие дополнения).</p>
+
+<p>Участки кода, которые часто используются при создании различных типов вирусов, являются сигнатурами (масками), для эвристического анализатора, иногда их так же называют вирусными break point’ами.</p>
+
+<p>Использование эвристического анализатора является не обязательным, но очень удобным, потому что позволяет не только обнаруживать новые вирусы, но и значительно ускорить процесс проверки файлов.<br />
+При наличии функций эвристического анализа, можно производить поиск известных вирусных сигнатур только в тех позициях, в которых “эвристик” встретит одну из масок. Потому что, проверка совпадения всех вирусных сигнатур, после каждой пройденной эмулятором инструкции займет достаточно много времени, особенно если:</p>
+<ol>
+  <li><strong>База содержит большое количество записей</strong></li>
+  <li><strong>База небольшого размера, но сигнатуры проверяются полностью</strong> — для поиска модификаций известных вирусов
+2.1. В этом случае сигнатура сравнивается полностью, и если совпало хотя бы 80% — возможно обнаружена модификация</li>
+</ol>
+
+<p>Более подробно описывать технологию эвристического анализа я не буду, так как она заслуживает отдельной статьи.</p>
+
+<h3 id="23-поиск-вирусных-сигнатур">2.3. Поиск вирусных сигнатур</h3>
+
+<p>Анализ участков кода и их сравнение с вирусными сигнатурами, записанными в базе. Для детектирования известного программе вируса достаточно именно обычного сравнения участка кода с конкретной (вирусной) сигнатурой.</p>
+
+<p>Приведем пример части анализатора, которая производит проверку всех вирусных сигнатур из базы. А так же пример формата вирусной базы.</p>
+<div class="language-nasm highlighter-rouge"><div class="highlight"><pre class="highlight"><code> <span class="c1">;</span>
+ <span class="c1">; длина одной записи</span>
+ <span class="c1">;</span>
+  <span class="no">entry_size</span><span class="kd">            equ</span> <span class="nv">e_type</span><span class="o">+</span><span class="nv">e_name</span><span class="o">+</span><span class="nv">e_slen</span><span class="o">+</span><span class="nv">e_dlen</span><span class="o">+</span><span class="nv">e_sdata</span><span class="o">+</span><span class="nv">e_curem</span>
+ <span class="c1">;</span>
+  <span class="no">e_type</span><span class="kd">                equ</span> <span class="mi">1</span>               <span class="c1">; тип записи для файлов:</span>
+   <span class="no">etype_dos_com</span><span class="kd">        equ</span> <span class="mi">0</span>               <span class="c1">;  - com (dos)</span>
+   <span class="no">etype_dos_exe</span><span class="kd">        equ</span> <span class="mi">1</span>               <span class="c1">;  - exe (dos)</span>
+   <span class="no">etype_pe</span><span class="kd">             equ</span> <span class="mi">2</span>               <span class="c1">;  - PE  (win32)</span>
+ <span class="c1">;</span>
+  <span class="no">e_name</span><span class="kd">                equ</span> <span class="mi">25</span>              <span class="c1">; длина названия записи (в ASCII символах)</span>
+  <span class="no">e_slen</span><span class="kd">                equ</span> <span class="mi">1</span>               <span class="c1">; байт содержит "реальную" длину сигнатуры</span>
+  <span class="no">e_dlen</span><span class="kd">                equ</span> <span class="mi">2</span>               <span class="c1">; глубина анализа</span>
+  <span class="no">e_sdata</span><span class="kd">               equ</span> <span class="mi">30</span>              <span class="c1">; полная длина сигнатуры</span>
+  <span class="no">e_curem</span><span class="kd">               equ</span> <span class="mi">4</span>               <span class="c1">; метод или смещение процедуры для лечения</span>
+    <span class="no">cmethod_unk</span><span class="kd">         equ</span> <span class="mi">0</span>               <span class="c1">;  - вылечить немогу</span>
+    <span class="no">cmethod_del</span><span class="kd">         equ</span> <span class="mi">1</span>               <span class="c1">;  - необходимо удалить</span>
+ <span class="c1">;                       </span>
+ <span class="nf">.data</span>
+ <span class="c1">;                                            вирусная база</span>
+  <span class="nf">vir_no</span>                 <span class="nv">dd</span> <span class="mi">2</span>               <span class="c1">; количество записей в базе</span>
+ <span class="err">@001</span><span class="nf">_type</span>               <span class="nv">db</span> <span class="nv">etype_pe</span>
+ <span class="err">@001</span><span class="nf">_name</span>               <span class="nv">db</span> <span class="err">'</span><span class="nv">Win32</span><span class="o">/</span><span class="nv">HLLM</span> <span class="nv">Mydoom</span><span class="err">'</span>
+                         <span class="kd">db</span> <span class="mi">008</span> <span class="nv">dup</span> <span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+ <span class="err">@001</span><span class="nf">_sig_len</span>            <span class="nv">db</span> <span class="mi">020</span>
+ <span class="err">@001</span><span class="nf">_dec_len</span>            <span class="nv">dw</span> <span class="mi">000</span>                
+ <span class="err">@001</span><span class="nf">_sig_data</span>           <span class="nv">db</span> <span class="mh">055h</span><span class="p">,</span><span class="mh">08Bh</span><span class="p">,</span><span class="mh">0ECh</span><span class="p">,</span><span class="mh">081h</span><span class="p">,</span> <span class="s">'?'</span><span class="p">,</span><span class="mi">005</span><span class="nv">d</span><span class="p">,</span><span class="mh">056h</span><span class="p">,</span><span class="mh">057h</span><span class="p">,</span><span class="mh">0E8h</span><span class="p">,</span> <span class="s">'?'</span>
+                         <span class="kd">db</span> <span class="mi">004</span><span class="nv">d</span><span class="p">,</span><span class="mh">08Dh</span><span class="p">,</span><span class="mh">085h</span><span class="p">,</span> <span class="s">'?'</span><span class="p">,</span><span class="mi">004</span><span class="nv">d</span><span class="p">,</span><span class="mh">050h</span><span class="p">,</span><span class="mh">06Ah</span><span class="p">,</span><span class="mh">002h</span><span class="p">,</span><span class="mh">0FFh</span><span class="p">,</span><span class="mh">015h</span>
+                         <span class="kd">db</span> <span class="mi">010</span> <span class="nv">dup</span> <span class="p">(</span><span class="nv">?</span><span class="p">)</span>
+ <span class="err">@001</span><span class="nf">_cure_loc</span>           <span class="nv">dd</span> <span class="nv">cmethod_del</span>
+ <span class="c1">;-----------------------</span>
+ <span class="err">@002</span><span class="nf">_type</span>               <span class="nv">db</span> <span class="nv">etype_pe</span>
+ <span class="err">@002</span><span class="nf">_name</span>               <span class="nv">db</span> <span class="err">'</span><span class="nv">Win32</span><span class="o">/</span><span class="nv">Parite</span><span class="err">'</span>   <span class="c1">; штамм B</span>
+                         <span class="kd">db</span> <span class="mi">013</span> <span class="nv">dup</span> <span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+ <span class="err">@002</span><span class="nf">_sig_len</span>            <span class="nv">db</span> <span class="mi">020</span>
+ <span class="err">@002</span><span class="nf">_dec_len</span>            <span class="nv">dw</span> <span class="mi">049</span><span class="o">+</span><span class="mi">1</span>          
+ <span class="err">@002</span><span class="nf">_sig_data</span>           <span class="nv">db</span> <span class="mh">055h</span><span class="p">,</span><span class="mh">08Bh</span><span class="p">,</span><span class="mh">0ECh</span><span class="p">,</span><span class="mh">081h</span><span class="p">,</span><span class="mh">0C4h</span><span class="p">,</span><span class="mh">0C0h</span><span class="p">,</span><span class="mh">0FEh</span><span class="p">,</span><span class="mh">0FFh</span><span class="p">,</span><span class="mh">0FFh</span><span class="p">,</span><span class="mh">08Bh</span>
+                         <span class="kd">db</span> <span class="mh">0C5h</span><span class="p">,</span><span class="mh">083h</span><span class="p">,</span><span class="mh">0C0h</span><span class="p">,</span><span class="mh">004h</span><span class="p">,</span> <span class="s">'?'</span><span class="p">,</span><span class="mh">003h</span><span class="p">,</span><span class="mh">056h</span><span class="p">,</span><span class="mh">057h</span><span class="p">,</span><span class="mh">033h</span><span class="p">,</span><span class="mh">0DBh</span>
+                         <span class="kd">db</span> <span class="mi">010</span> <span class="nv">dup</span> <span class="p">(</span><span class="nv">?</span><span class="p">)</span>
+ <span class="err">@002</span><span class="nf">_cure_loc</span>           <span class="nv">dd</span> <span class="nv">offset</span> <span class="nv">parite_b_pe</span>
+ <span class="c1">;</span>
+ <span class="nf">.code</span>
+ <span class="c1">;                                                                              </span>
+ <span class="c1">; detect - сравнение сигнатур из базы "bloc" с участком кода из "cloc"</span>
+ <span class="c1">;</span>
+ <span class="c1">; on start :      bloc - расположение базы сигнатур</span>
+ <span class="c1">;                 cloc - расположение кода для сравнения</span>
+ <span class="c1">;</span>
+ <span class="c1">; on exit  :  eax == 0 - ни одна из сигнатур не совпала</span>
+ <span class="c1">;             eax != 0 - содержит номер совпавшей сигнатуры в базе</span>
+ <span class="c1">;</span>
+  <span class="nf">detect</span>         <span class="nv">proc</span>   <span class="nb">cl</span><span class="nv">oc</span><span class="p">:</span><span class="kt">dword</span><span class="p">,</span> <span class="nb">bl</span><span class="nv">oc</span><span class="p">:</span><span class="kt">dword</span>
+ <span class="c1">;                                                                              </span>
+                 <span class="nf">push</span>    <span class="nb">ecx</span> <span class="nb">edx</span> <span class="nb">esi</span>
+                 <span class="nf">sub</span>     <span class="nb">edx</span><span class="p">,</span><span class="nb">edx</span>                <span class="c1">; edx-регистр под номер записи</span>
+                 <span class="nf">inc</span>     <span class="nb">edx</span>                    <span class="c1">; edx=1-рассмотрим 1 запись</span>
+                 <span class="nf">mov</span>     <span class="nb">esi</span><span class="p">,</span><span class="nb">bl</span><span class="nv">oc</span>
+                 <span class="nf">mov</span>     <span class="nb">ecx</span><span class="p">,</span><span class="kt">dword</span> <span class="nv">ptr</span> <span class="p">[</span><span class="nb">esi</span><span class="p">]</span>    <span class="c1">; ecx - кол-во записей в базе</span>
+                 <span class="nf">add</span>     <span class="nb">esi</span><span class="p">,</span><span class="mi">4</span>                  <span class="c1">; esi - данные первой записи</span>
+  <span class="nl">det_main_loop:</span> <span class="nf">sub</span>     <span class="nb">eax</span><span class="p">,</span><span class="nb">eax</span>
+                 <span class="nf">mov</span>     <span class="nb">al</span><span class="p">,</span><span class="kt">byte</span> <span class="nv">ptr</span> <span class="p">[</span><span class="nb">esi</span><span class="o">+</span><span class="nv">e_type</span><span class="o">+</span><span class="nv">e_name</span><span class="p">]</span>
+                 <span class="nf">push</span>    <span class="nb">eax</span>
+                 <span class="nf">add</span>     <span class="nb">esi</span><span class="p">,</span><span class="nv">e_type</span><span class="o">+</span><span class="nv">e_name</span><span class="o">+</span><span class="nv">e_slen</span><span class="o">+</span><span class="nv">e_dlen</span>
+                 <span class="nf">push</span>    <span class="nb">esi</span>                    <span class="c1">; расположение сигнатуры в записи</span>
+                 <span class="nf">push</span>    <span class="nb">cl</span><span class="nv">oc</span>                   <span class="c1">; расположение кода для сравнения</span>
+                 <span class="nf">call</span>    <span class="nv">detect_sig</span>             <span class="c1">; совпадает сигнатура ?</span>
+                 <span class="nf">or</span>      <span class="nb">eax</span><span class="p">,</span><span class="nb">eax</span>
+                 <span class="nf">jnz</span>     <span class="nv">det_sig_found</span>          <span class="c1">; если сигнатура совпала</span>
+ <span class="c1">;               </span>
+  <span class="nl">det_main_next:</span> <span class="nf">inc</span>     <span class="nb">edx</span>                    <span class="c1">; если сигнатура не совпала,</span>
+                 <span class="nf">add</span>     <span class="nb">esi</span><span class="p">,</span><span class="nv">e_sdata</span><span class="o">+</span><span class="nv">e_curem</span>    <span class="c1">; проверим следующую запись</span>
+                 <span class="nf">loop</span>    <span class="nv">det_main_loop</span>          <span class="c1">;</span>
+                 <span class="nf">sub</span>     <span class="nb">eax</span><span class="p">,</span><span class="nb">eax</span>                <span class="c1">; если ни одна из сигнатур не</span>
+                                                <span class="c1">; совпала eax=0</span>
+  <span class="nl">det_main_ret:</span>  <span class="nf">pop</span>     <span class="nb">esi</span> <span class="nb">edx</span> <span class="nb">ecx</span>            
+                 <span class="nf">ret</span>
+ <span class="c1">;               </span>
+  <span class="nl">det_sig_found:</span> <span class="nf">xchg</span>    <span class="nb">eax</span><span class="p">,</span><span class="nb">edx</span>                <span class="c1">; eax=edx-номер совпавшей сигнатуры</span>
+                 <span class="nf">jmp</span>     <span class="nv">det_main_ret</span>
+  <span class="nf">endp</span>
+ <span class="c1">;                                                                              </span>
+ <span class="c1">; проверка участка на совпадение с сигнатурой</span>
+ <span class="c1">;</span>
+ <span class="c1">; on start : slen - длина сигнатуры</span>
+ <span class="c1">;            sloc - расположение сигнатуры</span>
+ <span class="c1">;            cloc - расположение кода для сверки</span>
+ <span class="c1">; on exit  : eax = 0 - не совпадают, иначе сигнатура совпала</span>
+ <span class="c1">;</span>
+  <span class="nf">detect_sig</span>     <span class="nv">proc</span>   <span class="nb">cl</span><span class="nv">oc</span><span class="p">:</span><span class="kt">dword</span><span class="p">,</span> <span class="nv">sloc</span><span class="p">:</span> <span class="kt">dword</span><span class="p">,</span> <span class="nv">slen</span><span class="p">:</span> <span class="kt">dword</span>
+ <span class="c1">;                                                                              </span>
+                 <span class="nf">push</span>    <span class="nb">ecx</span> <span class="nb">edx</span> <span class="nb">esi</span> <span class="nb">edi</span>
+                                          <span class="c1">; установим параметры сигнатуры:</span>
+                 <span class="nf">mov</span>     <span class="nb">ecx</span><span class="p">,</span><span class="nv">slen</span>         <span class="c1">; ecx - размер</span>
+                 <span class="nf">mov</span>     <span class="nb">esi</span><span class="p">,</span><span class="nv">sloc</span>         <span class="c1">; esi - расположение</span>
+                 <span class="nf">mov</span>     <span class="nb">edi</span><span class="p">,</span><span class="nb">cl</span><span class="nv">oc</span>         <span class="c1">; edi - код для сравнения с сигнатурой</span>
+  <span class="nl">detect_loop:</span>   <span class="nf">lodsb</span>
+                 <span class="nf">cmp</span>     <span class="nb">al</span><span class="p">,</span><span class="s">'?'</span>
+                 <span class="nf">jnz</span>     <span class="nv">det_compare</span>
+ <span class="c1">;</span>
+ <span class="c1">; если встретился символ "?", значит необходимо пропустить количество</span>
+ <span class="c1">; (указанное в следующем байте сигнатуры) байт в исследуемом коде</span>
+ <span class="c1">;</span>
+                 <span class="nf">sub</span>     <span class="nb">eax</span><span class="p">,</span><span class="nb">eax</span>
+                 <span class="nf">lodsb</span>
+                 <span class="nf">dec</span>     <span class="nb">ecx</span>
+                 <span class="nf">add</span>     <span class="nb">edi</span><span class="p">,</span><span class="nb">eax</span>
+                 <span class="nf">jmp</span>     <span class="nv">detect_cont</span><span class="o">+</span><span class="mi">1</span>
+  <span class="nl">det_compare:</span>   <span class="nf">cmp</span>     <span class="kt">byte</span> <span class="nv">ptr</span> <span class="p">[</span><span class="nb">edi</span><span class="p">],</span><span class="nb">al</span>        <span class="c1">; сравним байты сигнатуры и кода</span>
+                 <span class="nf">jz</span>      <span class="nv">detect_cont</span>
+                 <span class="nf">sub</span>     <span class="nb">eax</span><span class="p">,</span><span class="nb">eax</span>
+                 <span class="nf">jmp</span>     <span class="nv">detect_ret</span>
+  <span class="nl">detect_cont:</span>   <span class="nf">inc</span>     <span class="nb">edi</span>
+                 <span class="nf">loop</span>    <span class="nv">detect_loop</span>              <span class="c1">; если цикл окончен и сигнатура</span>
+                 <span class="nf">mov</span>     <span class="nb">al</span><span class="p">,</span><span class="mi">1</span>                     <span class="c1">; совпала полностью EAX = 1</span>
+  <span class="nl">detect_ret:</span>    <span class="nf">pop</span>     <span class="nb">edi</span> <span class="nb">esi</span> <span class="nb">edx</span> <span class="nb">ecx</span>
+                 <span class="nf">ret</span>
+  <span class="nf">endp</span>
+</code></pre></div></div>
+
+<h3 id="24-поиск-процедуры-подсчета-delta-value">2.4. «Поиск» процедуры подсчета “delta value”</h3>
+
+<p><em>Delta value</em> - это число, которое является разницей между начальным положением кода (тем, которое он имел после компиляции) в памяти и текущим положением. Прибавляя это значение к смещениям различных “ресурсов”, мы всегда получим их текущее местоположение в памяти.</p>
+
+<p>Различные варианты (внешне видоизмененные), таких процедур используются в вирусах, так как местоположение их кода изменяется в зависимости от файлов, которые они заражают. Так же, эти процедуры используются в декрипторах большинства само шифрующихся вирусов и достаточно часто в вирусах использующих простые полиморфные алгоритмы. Это, несмотря на то, что наличие таких процедур, плюс несколько обнаруженных в декрипторе постоянных участков, позволяют составлять достаточно устойчивую сигнатуру расшифровщика, для детектирования с помощью “плавающей сигнатуры”.</p>
+
+<p>Процедура подсчета delta value, может выглядеть примерно так:</p>
+
+<div class="language-nasm highlighter-rouge"><div class="highlight"><pre class="highlight"><code>  <span class="nl">delta:</span>  <span class="nf">call</span> <span class="nv">get_ip</span>
+  <span class="nl">get_ip:</span> <span class="nf">pop</span>  <span class="nb">ebp</span>
+          <span class="nf">sub</span>  <span class="nb">ebp</span><span class="p">,</span><span class="nv">offset</span> <span class="nv">get_ip</span>
+</code></pre></div></div>
+
+<p>Или</p>
+
+<div class="language-nasm highlighter-rouge"><div class="highlight"><pre class="highlight"><code>  <span class="nl">delta:</span>  <span class="nf">call</span> <span class="nv">get_ip</span>
+  <span class="nl">get_ip:</span> <span class="nf">mov</span>  <span class="nb">ebp</span><span class="p">,</span><span class="kt">dword</span> <span class="nv">ptr</span> <span class="p">[</span><span class="nb">esp</span><span class="p">]</span>
+          <span class="nf">add</span>  <span class="nb">esp</span><span class="p">,</span><span class="mi">4</span>
+          <span class="nf">sub</span>  <span class="nb">ebp</span><span class="p">,</span><span class="nv">offset</span> <span class="nv">get_ip</span>
+</code></pre></div></div>
+
+<p>Первый вариант является самым простым и распространенным, именно по этому он и несколько других, являются дополнительной эвристической сигнатурой у многих антивирусов. Естественно при написании вирусов, стараются использовать видоизмененные варианты этих процедур.</p>
+
+<p>Как работает эмулятор? Кусок кода читается в буфер антивируса, разбирается на инструкции и имитируется их исполнение с помощью различных трюков. Многие инструкции, после разбора (дизассемблером) можно «запускать» в специальной среде, а после этого учитывать произошедшие изменения (новое состояние регистров, EFLAGS). Но есть и такие, работу которых нужно полностью имитировать.</p>
+
+<p>Полностью имитируется работа инструкций, которые в своей работе обращаются к данным по смещениям. В связи с изменением местоположения исследуемого кода в памяти (который мы перенесли в антивирусный буфер), необходимо рассчитать разницу между его оригинальным положением и положением в антивирусном буфере. Эта разница добавляется ко всем смещениям, использующимся в инструкциях, и является эквивалентом значения, которое вычисляется с помощью процедур “delta”. Следовательно, если подобные процедуры присутствуют в расшифровщике, то один из регистров (в примерах рассмотренных выше это <strong>ebp</strong>) будет содержать delta value, если он будет использоваться в указании смещений, то эмулятору просто нельзя никаким образом изменять смещение, потому что без вмешательства эмулятора и так получится “правильное” смещение. Значит анализатору кода необходимо выявлять наличие процедур подсчета delta value и определять номер регистра, в котором будет находиться это число.</p>
+
+<p>Самый удобный метод определения процедур, это поиск по сигнатурам. Но здесь тот случай, когда явную сигнатуру выделить никак нельзя. В обеих процедурах постоянной остается одна инструкция – “CALL”, точнее сказать только один ее байт (первый) - 0E8h. В этом случае попытаемся воспользоваться поиском сигнатур другого типа:</p>
+<ul>
+  <li>В процедурах подсчета delta value, первой всегда выполняется инструкция “CALL”, в результате стек будет содержать смещение инструкции следующей за ней.</li>
+  <li>После исполнения следующей инструкции (или нескольких) это значение (заготовкa для подсчета “разницы смещений”) будет содержать один из регистров, который в последующем содержать подсчитанный результат.</li>
+  <li>В большинстве случаев регистр, содержащий delta value, не изменяется в ходе выполнения расшифровки или работы   вирусного кода.</li>
+</ul>
+
+<p>Приведем пример простейшей реализации части анализатора кода, которая предназначена для выявления процедур подсчета delta value и регистра, содержащего это значение:</p>
+
+<div class="language-nasm highlighter-rouge"><div class="highlight"><pre class="highlight"><code> <span class="c1">;</span>
+ <span class="c1">; ca_ip_stage    - номер этапа, на котором находится эта функция кодо-анализатора</span>
+ <span class="c1">; ca_ip_instr    - количество инструкций проверенных после вызова "CALL"</span>
+ <span class="c1">; ca_ip_call_off - смещение полученной после вызова "CALL"</span>
+ <span class="c1">;</span>
+ <span class="nf">.data</span>
+  <span class="nf">ca_ip_stage</span>            <span class="nv">db</span> <span class="nv">?</span>
+  <span class="nf">ca_ip_instr</span>            <span class="nv">db</span> <span class="nv">?</span>
+  <span class="nf">ca_ip_call_off</span>         <span class="nv">dd</span> <span class="nv">?</span>
+ <span class="nf">.code</span>
+ <span class="c1">;                                                                              </span>
+ <span class="c1">; начальные параметры : esi - смещение разбираемой инструкции</span>
+ <span class="c1">;</span>
+  <span class="nf">ca_ip_srch</span>     <span class="nv">proc</span>
+ <span class="c1">;                                                                              </span>
+                 <span class="nf">push</span>    <span class="nb">eax</span> <span class="nb">ecx</span> <span class="nb">edx</span> <span class="nb">ebp</span> <span class="nb">edi</span> <span class="nb">esi</span>
+ <span class="c1">;               </span>
+ <span class="c1">; Работа процедуры делится на два этапа.</span>
+ <span class="c1">; После успешного завершения второго этапа, функция прекращает свою работу для</span>
+ <span class="c1">; текущего файла.</span>
+ <span class="c1">;</span>
+                 <span class="nf">cmp</span>     <span class="kt">byte</span> <span class="nv">ptr</span> <span class="p">[</span><span class="nv">ca_ip_stage</span><span class="p">],</span><span class="mi">2</span>
+                 <span class="nf">jz</span>      <span class="nv">ca_ip_srch_ret</span>
+                 <span class="nf">cmp</span>     <span class="kt">byte</span> <span class="nv">ptr</span> <span class="p">[</span><span class="nv">ca_ip_stage</span><span class="p">],</span><span class="mi">1</span>
+                 <span class="nf">jz</span>      <span class="nv">ca_ip_stage_2</span>
+ <span class="c1">;               </span>
+ <span class="c1">; Первый этап</span>
+ <span class="c1">;</span>
+ <span class="c1">; - Поиск инструкции CALL (0E8h)</span>
+ <span class="c1">; - Сохранение в "ca_ip_call_off" смещения, полученного в результате работы</span>
+ <span class="c1">;   найденной инструкции "CALL".</span>
+ <span class="c1">; - ca_ip_stage = 1</span>
+ <span class="c1">;</span>
+  <span class="nl">ca_ip_stage_1:</span> <span class="nf">lodsb</span>
+                 <span class="nf">cmp</span>     <span class="nb">al</span><span class="p">,</span><span class="mh">0e8h</span>
+                 <span class="nf">jnz</span>     <span class="nv">ca_ip_srch_ret</span>
+                 <span class="nf">lodsd</span>
+                 <span class="nf">inc</span>     <span class="kt">byte</span> <span class="nv">ptr</span> <span class="p">[</span><span class="nv">ca_ip_stage</span><span class="p">]</span>
+                 <span class="nf">mov</span>     <span class="kt">dword</span> <span class="nv">ptr</span> <span class="p">[</span><span class="nv">ca_ip_call_off</span><span class="p">],</span><span class="nb">esi</span>
+                 <span class="nf">jmp</span>     <span class="nv">ca_ip_srch_ret</span>
+ <span class="c1">;               </span>
+ <span class="c1">; Второй этап: первая часть</span>
+ <span class="c1">;</span>
+ <span class="c1">;  Проверка значений всех регистров (которые храняться в буфере "regs"), на</span>
+ <span class="c1">; наличие в них значения совпадающего с "ca_ip_call_off".</span>
+ <span class="c1">;  Ведется счетчик инструкций. Если, в течении разбора эмулятором четырех</span>
+ <span class="c1">; инструкций, ни один из регистров не содержит значения - заготовки для подсчета</span>
+ <span class="c1">; delta value. То начинаем с первого этапа - обнуляем "ca_ip_percent".</span>
+ <span class="c1">;</span>
+  <span class="nl">ca_ip_stage_2:</span> <span class="nf">mov</span>     <span class="nb">esi</span><span class="p">,</span><span class="nv">offset</span> <span class="p">[</span><span class="nv">regs</span><span class="p">]</span>
+                 <span class="nf">sub</span>     <span class="nb">ecx</span><span class="p">,</span><span class="nb">ecx</span>
+                 <span class="nf">mov</span>     <span class="nb">cl</span><span class="p">,</span><span class="mi">7</span><span class="o">+</span><span class="mi">1</span>
+  <span class="nl">ca_ip_srch_lp:</span> <span class="nf">lodsd</span>
+                 <span class="nf">cmp</span>     <span class="kt">dword</span> <span class="nv">ptr</span> <span class="p">[</span><span class="nv">ca_ip_call_off</span><span class="p">],</span><span class="nb">eax</span>
+                 <span class="nf">jz</span>      <span class="nv">ca_ip_stage_3</span>            <span class="c1">; перейдем ко второй части этапа</span>
+                 <span class="nf">loop</span>    <span class="nv">ca_ip_srch_lp</span>
+                 <span class="nf">inc</span>     <span class="kt">byte</span> <span class="nv">ptr</span> <span class="p">[</span><span class="nv">ca_ip_instr</span><span class="p">]</span>
+                 <span class="nf">cmp</span>     <span class="kt">byte</span> <span class="nv">ptr</span> <span class="p">[</span><span class="nv">ca_ip_instr</span><span class="p">],</span><span class="mi">4</span>
+                 <span class="nf">jnz</span>     <span class="nv">ca_ip_srch_ret</span>
+                 <span class="nf">mov</span>     <span class="kt">word</span> <span class="nv">ptr</span> <span class="p">[</span><span class="nv">ca_ip_stage</span><span class="p">],</span><span class="mi">0</span>
+                 <span class="nf">mov</span>     <span class="kt">dword</span> <span class="nv">ptr</span> <span class="p">[</span><span class="nv">ca_ip_call_off</span><span class="p">],</span><span class="mi">0</span>
+                 <span class="nf">jmp</span>     <span class="nv">ca_ip_srch_ret</span>
+ <span class="c1">;               </span>
+ <span class="c1">; Второй этап: вторая часть</span>
+ <span class="c1">;</span>
+ <span class="c1">; - Рассчитаем номер регистра, который содержит delta_value и укажем это в таблице</span>
+ <span class="c1">;   информации о регистрах ("_regs").</span>
+ <span class="c1">; - Присвоим значение 2 переменной "ca_ip_percent", это означает, что работа этой</span>
+ <span class="c1">;   части кодо-анализатора прекращена.</span>
+ <span class="c1">;</span>
+  <span class="nl">ca_ip_stage_3:</span> <span class="nf">inc</span>     <span class="kt">byte</span> <span class="nv">ptr</span> <span class="p">[</span><span class="nv">ca_ip_percent</span><span class="p">]</span>
+                 <span class="nf">sub</span>     <span class="nb">eax</span><span class="p">,</span><span class="nb">eax</span>
+                 <span class="nf">mov</span>     <span class="nb">al</span><span class="p">,</span><span class="mi">7</span><span class="o">+</span><span class="mi">1</span>
+                 <span class="nf">sub</span>     <span class="nb">al</span><span class="p">,</span><span class="nb">cl</span>
+                 <span class="nf">mov</span>     <span class="kt">byte</span> <span class="nv">ptr</span> <span class="p">[</span><span class="nb">eax</span><span class="o">+</span><span class="nv">_regs</span><span class="p">],</span><span class="mi">1</span>   <span class="c1">; в eax номер регистра содержащего</span>
+                                                  <span class="c1">; "заготовку" для delta value</span>
+ <span class="c1">;               </span>
+  <span class="nl">ca_ip_srch_ret:</span><span class="nf">pop</span>     <span class="nb">esi</span> <span class="nb">edi</span> <span class="nb">ebp</span> <span class="nb">edx</span> <span class="nb">ecx</span> <span class="nb">eax</span>
+                 <span class="nf">ret</span>
+  <span class="nf">endp</span>
+</code></pre></div></div>
+
+<p>Получается, что анализатор – “заведует” информацией о типе значений, которые хранятся в каждом из регистров. В примере, для этого использовался буфер “_regs”. Нормальная работа эмулятора без информации такого рода просто невозможна. Ниже я расскажу о том, как эмулятор использует эту информацию.</p>
+
+<p>В процессе работы, эмулятор «предоставляет» разбираемой программе “виртуальный стек”. То есть программа будет использовать в своей работе стек расположенный в специальном буфере. Следовательно, если в ходе эмуляции инструкции будут обращаться по смещениям находящимся в стеке, каких либо изменений со стороны эмулятора не требуется. В данном случае при инициализации кодо-анализатора в буфере “_regs”, для регистра esp (“regs+4”) должна делаться специальная пометка типа регистра (см. выше).</p>
+
+<h3 id="25-полная-имитация-выполнения-инструкций">2.5. Полная имитация выполнения инструкций</h3>
+
+<p>Допустим в цикле работы эмулятора, дизассемблер встретил инструкцию типа:</p>
+
+<p><strong>xor dword ptr [erega+eregb],eregc</strong> или <strong>xor dword ptr [erega+eregb],_dword_</strong></p>
+
+<p>Рассмотрим процесс разбора параметров инструкции:</p>
+<ul>
+ <li>Определяется размер инструкции.</li>
+ <li>Действия необходимые для имитации выполнения этой инструкции</li>
+  <ol>
+   <li>Инструкция использует смещение, которое получается в результате сложения значений двух регистров – erega и
+       eregb, следовательно необходима полная имитация выполнения инструкции.</li>
+   <li>Для полной имитации необходим разбор инструкции на <b>дополнительные</b> параметры: количество регистров,
+       использующихся в указании смещения (в данном случае 2) <b>и</b> номера этих регистров.</li>
+  </ol>
+</ul>
+
+<p>Номера регистров:</p>
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>        AX или AL - 000  =  0
+        CX или CL - 001  =  1
+        DX или DL - 010  =  2
+        BX или BL - 011  =  3
+        SP или AH - 100  =  4
+        BP или CH - 101  =  5
+        SI или DH - 110  =  6
+        DI или BH - 111  =  7
+</code></pre></div></div>
+<p>Для хранения количества регистров использующихся в указании смещения и номеров этих регистров отведем специальный буфер “dregs”. Процесс сохранения параметров необходимых для полной имитации выполнения будет выглядеть примерно так:</p>
+<ol>
+  <li>mov dword ptr [dregs+000],2 - количество регистров</li>
+  <li>mov dword ptr [dregs+004],erega - номер регистра erega</li>
+  <li>mov dword ptr [dregs+008],eregb - номер регистра eregb</li>
+</ol>
+
+<p>Рассмотрим участок кода эмулятора, который производит вычисление смещения использующегося в инструкции и последующую иммитацию выполнения:</p>
+<div class="language-nasm highlighter-rouge"><div class="highlight"><pre class="highlight"><code> <span class="nf">.data</span>
+ <span class="c1">;</span>
+ <span class="c1">; dregs+000 - кол-во регистров использующихся в инструкции для указания смещения</span>
+ <span class="c1">; dregs+1*4 - номер первого регистра использующегося для ...</span>
+ <span class="c1">; dregs+2*4 - номер второго регистра ...</span>
+ <span class="c1">; dregs+n*4 - немер n-ого регистра ...</span>
+ <span class="c1">;</span>
+  <span class="nf">dregs</span>                 <span class="nv">dd</span> <span class="mi">010</span> <span class="nv">dup</span> <span class="p">(</span><span class="nv">?</span><span class="p">)</span>
+   <span class="nf">regs</span>                 <span class="nv">dd</span> <span class="mi">008</span> <span class="nv">dup</span> <span class="p">(</span><span class="nv">?</span><span class="p">)</span>
+ <span class="nf">.code</span>
+  <span class="err">@</span><span class="nl">found_spec:</span>   <span class="nf">push</span>    <span class="nb">ebp</span>
+ <span class="c1">;</span>
+ <span class="c1">; настроим регистры:</span>
+ <span class="c1">;</span>
+ <span class="c1">;  ecx = dregs+000 - количество регистров использующихся в указании смещения </span>
+ <span class="c1">;  ebx = по окончанию цикла, будет содержать смещение, которое содержалось в регистрах</span>
+ <span class="c1">;  ebp = 0 - если в инструкции не использовались регистры содержащие</span>
+ <span class="c1">;        delta value или смещение в стеке</span>
+ <span class="c1">;  esi = смещение в буфере dregs</span>
+ <span class="c1">;</span>
+                 <span class="nf">sub</span>     <span class="nb">ebp</span><span class="p">,</span><span class="nb">ebp</span>
+                 <span class="nf">sub</span>     <span class="nb">ebx</span><span class="p">,</span><span class="nb">ebx</span>
+                 <span class="nf">mov</span>     <span class="nb">esi</span><span class="p">,</span><span class="nv">offset</span> <span class="nv">dregs</span>
+                 <span class="nf">lodsd</span>
+                 <span class="nf">xchg</span>    <span class="nb">eax</span><span class="p">,</span><span class="nb">ecx</span>
+  <span class="nl">count_sum_lp:</span>  <span class="nf">lodsd</span>
+                 <span class="nf">cmp</span>     <span class="kt">byte</span> <span class="nv">ptr</span> <span class="p">[</span><span class="nb">eax</span><span class="o">+</span><span class="nv">_regs</span><span class="p">],</span><span class="mi">0</span> <span class="c1">; тип регистра не = 0, значит</span>
+                 <span class="nf">jz</span>      <span class="nv">count_sum</span>              <span class="c1">; содержит вычисленное delta value</span>
+                                                <span class="c1">; или смещение в области стека, ...</span>
+                 <span class="nf">inc</span>     <span class="nb">ebp</span>                    <span class="c1">; ... ebp = ebp + 1</span>
+  <span class="nl">count_sum:</span>     <span class="nf">push</span>    <span class="nb">ecx</span> <span class="nb">edx</span>
+                 <span class="nf">sub</span>     <span class="nb">edx</span><span class="p">,</span><span class="nb">edx</span>
+                 <span class="nf">mov</span>     <span class="nb">dl</span><span class="p">,</span><span class="mi">4</span>
+                 <span class="nf">mul</span>     <span class="nb">edx</span>
+                 <span class="nf">pop</span>     <span class="nb">edx</span> <span class="nb">ecx</span>
+ <span class="c1">;</span>
+ <span class="c1">; буфер regs содержит значения регистров эмулируемой программы,</span>
+ <span class="c1">; добавим значение использующегося регистра в смещение.</span>
+ <span class="c1">;                </span>
+                 <span class="nf">add</span>     <span class="nb">ebx</span><span class="p">,</span><span class="kt">dword</span> <span class="nv">ptr</span> <span class="p">[</span><span class="nv">regs</span><span class="o">+</span><span class="nb">eax</span><span class="p">]</span>
+                 <span class="nf">loop</span>    <span class="nv">count_sum_lp</span>
+ <span class="c1">;</span>
+ <span class="c1">;  Далее необходимо рассчитать разницу между старым местоположением в файле и тем по</span>
+ <span class="c1">; которому инструкция расположена в антивирусном буфере. Но если в указании смещения</span>
+ <span class="c1">; участвовал регистр содержащий delta value или смещение в области</span>
+ <span class="c1">; "виртуального стека", подобные изменения будут лишними (смотри</span>
+ <span class="c1">; пункт 2.4).</span>
+ <span class="c1">; Если значение регистра EBP &gt; 0, то изменений не требуется.</span>
+ <span class="c1">;</span>
+                 <span class="nf">or</span>      <span class="nb">ebp</span><span class="p">,</span><span class="nb">ebp</span>
+                 <span class="nf">pop</span>     <span class="nb">ebp</span>
+                 <span class="nf">jnz</span>     <span class="err">@</span><span class="nb">sp</span><span class="nv">ec_emul_01</span>
+                 <span class="nf">sub</span>     <span class="nb">ebx</span><span class="p">,</span><span class="err">старое</span> <span class="err">местоположение</span> <span class="err">кода</span> <span class="err">в</span> <span class="err">файле</span>
+                 <span class="nf">add</span>     <span class="nb">ebx</span><span class="p">,</span><span class="err">местоположение</span> <span class="err">кода</span> <span class="err">в</span> <span class="err">антивирусном</span> <span class="err">буфере</span>
+  <span class="err">@</span><span class="nl">spec_emul_01:</span> <span class="nf">...</span>
+</code></pre></div></div>
+<p>Далее следует:</p>
+<ol>
+ <li>Проверка полученного смещения: смещение должно быть расположенно исключительно внутри антивирусного буфера или
+     "виртуального стека", ко всем остальным "данным" исследуемая программа обращаться не может.</li>
+ <li>Разбор третьего параметра инструкции <font color="#000080">mov eax,номер регистра eregc</font> или <font color="#000080">mov eax,_dword_</font></li>
+  <ul>
+   <li>Имитация исполнения инструкции: <b>xor dword ptr [ebx],eax</b></li>
+</ul></ol>
+
+<h3 id="26-изменение-параметров-работы-эмулятора">2.6. Изменение параметров работы эмулятора</h3>
+
+<p>При запуске эмулятора, антивирус передает ему некоторые параметры, например:</p>
+<ul>
+  <li>Расположение кода для эмуляции в антивирусном буфере.</li>
+  <li>Оригинальное расположение кода в файле.</li>
+  <li><strong>Время на исполнение этого кода или размер участка, который необходимо выполнить</strong>.</li>
+</ul>
+
+<p>Рассмотрим часть анализатора кода, которая выполняется перед запуском эмулятора и изменяет размер участка данных, который необходимо выполнить (параметр номер 3). Зачем это нужно? Как я уже говорил, эмулятор антивируса может предназначаться только для имитации работы расшифровщиков (декрипторов). В этом случае основная и единственная его задача - расшифровать вирусное тело и сравнить с сигнатурами известных вирусов (информация о которых присутствует в базе). Как правило длина таких расшифровщиков несколько сотен байт, однако существуют различные утилиты, которые позволяют упаковать или зашифровать код вирусных дропперов или программ зараженных вирусами. Такими утилитами, часто пользуются, когда распространяют вирусы (особенно те, в которых отсутствуют технологии полиморфизма или шифровки - черви или троянские кони), в надежде на то, что антивирусы не смогут обнаружить вирусы в таких файлах. Подобные утилиты прикрепляют к “обработанным” файлам достаточно большие и комплексные декрипторы. Если эмулятор антивируса, способен имитировать работу декрипторов создаваемых, той или иной утилитой, то при их «встрече», размер эмулируемого кода должен равняться максимальному размеру декрипторов создаваемых этой утилитой. Очень часто, декрипторы содержат множество сигнатур, которые и могут являться критерием встречи с “продуктом” какой либо утилиты.</p>
+
+<p>Пример процедуры входящей в состав кодо-анализатора, назначением которой является определение в коде наличие декриптора, создаваемого утилитой UPX:</p>
+<div class="language-nasm highlighter-rouge"><div class="highlight"><pre class="highlight"><code> <span class="c1">;                                                                              </span>
+ <span class="c1">; структура записей полностью аналогична структуре вирусной базы, для поиска сигнатуры используется</span>
+ <span class="c1">; функция описанная (выше)</span>
+ <span class="c1">;</span>
+ <span class="nf">.data</span>
+  <span class="nf">pck_no</span>                 <span class="nv">dd</span> <span class="mi">1</span>                             <span class="c1">; количество записей в базе</span>
+ <span class="nf">_001_type</span>               <span class="nv">db</span> <span class="nv">etype_pe</span>                      <span class="c1">; запись для PE-файлов</span>
+ <span class="nf">_001_name</span>               <span class="nv">db</span> <span class="s">'UPX'</span>                         <span class="c1">; название утилиты - UPX</span>
+                         <span class="kd">db</span> <span class="mi">022</span> <span class="nv">dup</span> <span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+ <span class="nf">_001_sig_len</span>            <span class="nv">db</span> <span class="mi">006</span>                           <span class="c1">; длина сигнатуры 6 байт</span>
+ <span class="nf">_001_dec_len</span>            <span class="nv">dw</span> <span class="mi">1000</span>                          <span class="c1">; максимальная длина декриптора ;)</span>
+ <span class="nf">_001_sig_data</span>           <span class="nv">db</span> <span class="mh">060h</span><span class="p">,</span><span class="mh">0BEh</span><span class="p">,</span> <span class="s">'?'</span><span class="p">,</span><span class="mi">004</span><span class="nv">d</span><span class="p">,</span><span class="mh">08Dh</span><span class="p">,</span><span class="mh">0BEh</span> <span class="c1">; сигнатура</span>
+                         <span class="kd">db</span> <span class="mi">024</span> <span class="nv">dup</span> <span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+ <span class="nf">_001_cure_loc</span>           <span class="nv">dd</span> <span class="mi">0</span>                             <span class="c1">; это поле не используется</span>
+ <span class="nf">.code</span>
+ <span class="c1">;                                                                              </span>
+ <span class="c1">; det_pack - проверка на упаковщики и шифровщики</span>
+ <span class="c1">;</span>
+ <span class="c1">; on exit  :  ebx - длина кода, которую необходимо разобрать для "распаковки" файла</span>
+ <span class="c1">;</span>
+  <span class="nf">det_pack</span>       <span class="nv">proc</span>
+ <span class="c1">;                                                                              </span>
+                 <span class="nf">push</span>    <span class="nb">eax</span> <span class="nb">ecx</span> <span class="nb">edx</span> <span class="nb">ebp</span> <span class="nb">edi</span> <span class="nb">esi</span>
+ <span class="c1">;               </span>
+                 <span class="nf">push</span>    <span class="nv">offset</span> <span class="nv">pck_no</span>
+                 <span class="nf">push</span>    <span class="err">смещение</span> <span class="err">точки</span> <span class="err">входа</span> <span class="err">в</span> <span class="err">код</span>
+                 <span class="nf">call</span>    <span class="nv">detect</span>
+                 <span class="nf">or</span>      <span class="nb">eax</span><span class="p">,</span><span class="nb">eax</span>
+                 <span class="nf">jz</span>      <span class="nv">det_pack_ret</span>
+ <span class="c1">;               </span>
+                 <span class="nf">dec</span>     <span class="nb">eax</span>
+                 <span class="nf">mov</span>     <span class="nb">edx</span><span class="p">,(</span> <span class="p">(</span><span class="nv">_001_cure_loc</span><span class="o">+</span><span class="mi">1</span><span class="p">)</span> <span class="o">-</span> <span class="nv">_001_type</span> <span class="p">)</span>
+                 <span class="nf">mul</span>     <span class="nb">edx</span>
+                 <span class="nf">add</span>     <span class="nb">eax</span><span class="p">,</span><span class="nv">offset</span> <span class="nv">_001_name</span>             <span class="c1">; eax - смещение на имя</span>
+ 
+                 <span class="err">выведем</span> <span class="err">информацию</span> <span class="err">о</span> <span class="err">том,</span> <span class="err">что</span> <span class="err">файл</span> <span class="err">упакован</span> <span class="err">(зашифрован)</span> <span class="err">утилитой</span> <span class="nf">...</span>
+ 
+                 <span class="nf">sub</span>     <span class="nb">ebx</span><span class="p">,</span><span class="nb">ebx</span>
+                 <span class="nf">mov</span>     <span class="nb">bx</span><span class="p">,</span><span class="kt">word</span> <span class="nv">ptr</span> <span class="p">[</span><span class="nv">_001_type</span><span class="o">+</span><span class="nv">e_type</span><span class="o">+</span><span class="nv">e_name</span><span class="o">+</span><span class="nv">e_slen</span><span class="p">]</span>
+  <span class="nl">det_pack_ret:</span>  <span class="nf">pop</span>     <span class="nb">esi</span> <span class="nb">edi</span> <span class="nb">ebp</span> <span class="nb">edx</span> <span class="nb">ecx</span> <span class="nb">eax</span>
+                 <span class="nf">ret</span>
+  <span class="nf">endp</span>                                                                              
+</code></pre></div></div>
+
+<h2 id="3-заключение">3. Заключение</h2>
+
+<p>В статье были использованы знания, полученные по время разработки <a href="https://github.com/andrei-ag/xpl_av">Explosion Antivirus</a>, а так же части его исходных текстов.</p>
+
+<p>Выпущена: 24 февраля 2004<br />
+Автор: <a href="https://github.com/andrei-ag/">Andrei Agafonov</a><br />
+Рецензирование: Команда UinC.RU, отдельное спасибо Dr.Golova<br />
+Источник: <a href="https://web.archive.org/web/20051215213447/http://uinc.ru:80/articles/45/">http://www.uinc.ru</a></p>]]></content><author><name>Andrei Agafonov</name></author><category term="antivirus" /><category term="code-analysis" /><category term="assembly" /><category term="signatures" /><category term="heuristic" /><category term="delta-value" /><category term="upx" /><category term="pe-file" /><category term="idiv32" /><summary type="html"><![CDATA[Статья о работе анализатора кода: инициализация, эвристический анализ, поиск вирусных сигнатур и «охота» за процедурами вычисления delta value.]]></summary></entry></feed>

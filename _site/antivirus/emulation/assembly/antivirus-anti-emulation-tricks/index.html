@@ -1,0 +1,645 @@
+<!doctype html>
+<!--
+  Minimal Mistakes Jekyll Theme 4.26.2 by Michael Rose
+  Copyright 2013-2024 Michael Rose - mademistakes.com | @mmistakes
+  Free for personal and commercial use under the MIT license
+  https://github.com/mmistakes/minimal-mistakes/blob/master/LICENSE
+-->
+
+<html lang="ru" class="no-js">
+  <head>
+    <meta charset="utf-8">
+
+<!-- begin _includes/seo.html --><title>Уязвимости эмуляторов кода | andrei-ag :: code execution &amp; antivirus internals</title>
+<meta name="description" content="Тестирование антивирусных эмуляторов. Обман эмуляции через call+pop/sub, уязвимость idiv32 и вызовы API. Сравнение Dr.Web, NAV, AVP, Panda, Stop!">
+
+
+  <meta name="author" content="Andrei Agafonov">
+  
+  <meta property="article:author" content="Andrei Agafonov">
+  
+
+
+<meta property="og:type" content="article">
+<meta property="og:locale" content="ru">
+<meta property="og:site_name" content="andrei-ag :: code execution & antivirus internals">
+<meta property="og:title" content="Уязвимости эмуляторов кода">
+<meta property="og:url" content="http://localhost:4000/antivirus/emulation/assembly/antivirus-anti-emulation-tricks/">
+
+
+  <meta property="og:description" content="Тестирование антивирусных эмуляторов. Обман эмуляции через call+pop/sub, уязвимость idiv32 и вызовы API. Сравнение Dr.Web, NAV, AVP, Panda, Stop!">
+
+
+
+
+
+
+
+  <meta property="article:published_time" content="2004-04-06T00:00:00+03:00">
+
+
+
+
+
+
+<link rel="canonical" href="http://localhost:4000/antivirus/emulation/assembly/antivirus-anti-emulation-tricks/">
+
+
+
+
+
+
+
+
+
+
+
+
+<!-- end _includes/seo.html -->
+
+
+
+  <link href="/feed.xml" type="application/atom+xml" rel="alternate" title="andrei-ag :: code execution & antivirus internals Feed">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<script type="text/javascript">
+  document.documentElement.className = document.documentElement.className.replace(/\bno-js\b/g, '') + ' js ';
+  
+</script>
+
+<!-- For all browsers -->
+<link rel="stylesheet" href="/assets/css/main.css">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@latest/css/all.min.css" as="style" onload="this.onload=null;this.rel='stylesheet'">
+<noscript><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@latest/css/all.min.css"></noscript>
+
+
+
+    <!-- start custom head snippets -->
+
+<!-- insert favicons. use https://realfavicongenerator.net/ -->
+
+<!-- end custom head snippets -->
+
+  </head>
+
+  <body class="layout--single wide">
+    <nav class="skip-links">
+  <ul>
+    <li><a href="#site-nav" class="screen-reader-shortcut">Skip to primary navigation</a></li>
+    <li><a href="#main" class="screen-reader-shortcut">Skip to content</a></li>
+    <li><a href="#footer" class="screen-reader-shortcut">Skip to footer</a></li>
+  </ul>
+</nav>
+
+    
+
+<div class="masthead">
+  <div class="masthead__inner-wrap">
+    <div class="masthead__menu">
+      <nav id="site-nav" class="greedy-nav">
+        
+        <a class="site-title" href="/">
+          andrei-ag :: code execution & antivirus internals
+          
+        </a>
+        <ul class="visible-links"></ul>
+        
+        <button class="search__toggle" type="button">
+          <span class="visually-hidden">Toggle search</span>
+          <i class="fas fa-search"></i>
+        </button>
+        
+        <button class="greedy-nav__toggle hidden" type="button">
+          <span class="visually-hidden">Toggle menu</span>
+          <div class="navicon"></div>
+        </button>
+        <ul class="hidden-links hidden"></ul>
+      </nav>
+    </div>
+  </div>
+</div>
+
+
+    <div class="initial-content">
+      
+
+
+
+
+
+<div id="main" role="main">
+  
+
+
+  <article class="page" itemscope itemtype="https://schema.org/CreativeWork">
+    <meta itemprop="headline" content="Уязвимости эмуляторов кода">
+    <meta itemprop="description" content="Тестирование антивирусных эмуляторов. Обман эмуляции через call+pop/sub, уязвимость idiv32 и вызовы API. Сравнение Dr.Web, NAV, AVP, Panda, Stop!">
+    <meta itemprop="datePublished" content="2004-04-06T00:00:00+03:00">
+    
+
+    <div class="page__inner-wrap">
+      
+        <header>
+          <h1 id="page-title" class="page__title" itemprop="headline">
+            <a href="http://localhost:4000/antivirus/emulation/assembly/antivirus-anti-emulation-tricks/" itemprop="url">Уязвимости эмуляторов кода
+</a>
+          </h1>
+          
+
+  <p class="page__meta">
+    
+
+    
+
+    
+      
+      
+
+      <span class="page__meta-readtime">
+        <i class="far fa-clock" aria-hidden="true"></i>
+        
+          10 minute read
+        
+      </span>
+    
+  </p>
+
+
+        </header>
+      
+
+      <section class="page__content" itemprop="text">
+        
+          <aside class="sidebar__right sticky">
+            <nav class="toc">
+              <header><h4 class="nav__title"><i class="fas fa-file-alt"></i> On this page</h4></header>
+              <ul class="toc__menu"><li><a href="#1-вступление">1. Вступление</a></li><li><a href="#2-несколько-слов-о-процедурах-эмуляции-кода">2. Несколько слов о процедурах эмуляции кода</a></li><li><a href="#3-шах-и-мат-в-две-инструкции">3. Шах и мат в две инструкции</a></li><li><a href="#4-история-с-продолжением">4. История с продолжением</a></li><li><a href="#5-старые-песни-о-главном">5. Старые песни о главном</a></li><li><a href="#6-против-лома-нет-приема-">6. Против лома нет приема …</a></li><li><a href="#7-заключение">7. Заключение</a></li></ul>
+            </nav>
+          </aside>
+        
+        <h3 id="1-вступление">1. Вступление</h3>
+<p>Генераторы полиморфных шифровщиков/расшифровщиков очень часто используются для защиты исполняемых файлов (полностью либо частично) и во многих компьютерных вирусах. Для того, что бы усложнить процесс создания утилит, предназначенных для автоматического снятия защит такого рода, и обнаружения вирусов используются различные алгоритмы, называемые <em>анти-эмуляционными трюками</em>. Этим алгоритмам и будет посвящена данная статья.</p>
+
+<p>Тестирование трюков будет производиться на антивирусных программах, которые, бесспорно, содержат самые совершенные реализации эмуляторов кода. Таким образом, мы оценим качество эмуляторов следующих антивирусов:</p>
+<ol>
+  <li><a href="http://www.pandasoftware.com">Panda</a> AntiVirus Titanium 2004</li>
+  <li><a href="http://www.symantec.com">Norton</a> Antivirus 2004</li>
+  <li><a href="http://www.proantivirus.com">Stop</a>! Scanner 5.0</li>
+  <li><a href="http://www.drweb.ru">Dr. Web</a> 4.30a</li>
+  <li><a href="http://www.avp.ru">Kaspersky</a> Anti-virus (AVP) v3.5.133.0</li>
+</ol>
+
+<h3 id="2-несколько-слов-о-процедурах-эмуляции-кода">2. Несколько слов о процедурах эмуляции кода</h3>
+
+<p>В том случае, если алгоритм расшифровки данных присутствует в файле, единственным способом автоматической расшифровки является эмуляция. Процесс эмуляции может быть выполнен двумя способами:</p>
+<ol>
+  <li>Трассировка программы, т.е. ее загрузка в память и исполнение путем использования отладочного прерывания.</li>
+  <li>Кусок кода “нуждающийся в эмуляции” читается в буфер, разбирается на инструкции и с помощью различных трюков    имитируется исполнение инструкций кода.</li>
+</ol>
+
+<p><strong>Первый способ</strong> в “чистом виде” использовать достаточно опасно, к тому же процесс трассировки обнаружить и “обломать” не составляет особого труда. Если использовать <strong>второй способ</strong>, то процесс эмуляции программы будет занимать достаточно большой промежуток времени и разработка стабильно работающей версии займет “века”. Именно по этому используют комбинацию двух вышеописанных способов.</p>
+
+<p>Конечно же, есть “вещи” имитацию которых реализовать достаточно тяжело (почти невозможно). Имея небольшой опыт в разработке эмуляторов кода, я могу предположить, какие области являются наиболее сложными и могут быть реализованы с ошибками или вообще не реализованы. Но чтобы знать наверняка, проверим предположения на практике.</p>
+
+<h3 id="3-шах-и-мат-в-две-инструкции">3. Шах и мат в две инструкции</h3>
+
+<p>Перед процессом эмуляции, исследуемая программа читается в буфер, и для “опасных” (подозрительных) участков кода эмулятор производит полную имитацию выполнения, “безопасные” же инструкции или участки кода запускаются “напрямую”. Все это означает, что местоположение эмулируемой программы в памяти изменяется. Таким образом, можно попытаться запутать эмулятор, если определить текущее местоположение и:</p>
+<ol>
+  <li>сравнить с тем, которое должно быть</li>
+  <li>использовать полученное смещение для расчета одного из параметров, участвующих в расшифровке (ключ, размер    зашифрованных данных и т.д.)</li>
+</ol>
+
+<p>Если Вы решили использовать <strong>первый вариант</strong>, в случае не совпадения положения кода, можно направить эмулятор по “ложному следу”. Но такой конструкции (алгоритма вычисления смещения и сравнения его с оригинальным) будет достаточно, чтобы считать ее сигнатурой свойственной данному типу расшифровщика. Таким образом, анализатор кода, использующийся в эмуляторе обнаружит эту конструкцию и использует специальный прием для “правильной” эмуляции участка.</p>
+
+<p><strong>Второй вариант</strong> можно рассмотреть подробнее и проще будет сделать это “на практике”. Так как писать специальную утилиту для тестов мне лень, понадобится следующее:</p>
+<ol>
+  <li>отладчик и шестнадцатеричный редактор.</li>
+  <li>программа, зараженная полиморфным вирусом <a href="https://web.archive.org/web/20040812094633/http://www.estav.ru/news/2004_01_17.htm">win32/parite (штамм b)</a>.</li>
+</ol>
+
+<p>Загрузим инфицированный файл в отладчик и рассмотрим процедуру расшифровки вирусного кода:</p>
+<div class="language-nasm highlighter-rouge"><div class="highlight"><pre class="highlight"><code> <span class="err">0040</span><span class="nf">E000</span> <span class="nv">start</span><span class="p">:</span>          <span class="nv">nop</span>
+ <span class="err">0040</span><span class="nf">E001</span>                 <span class="nv">push</span>    <span class="mh">3786Fh</span>              <span class="c1">; ecx - ключ необходимый для расшифровки</span>
+ <span class="err">0040</span><span class="nf">E006</span>                 <span class="nv">pop</span>     <span class="nb">ecx</span>
+ <span class="err">0040</span><span class="nf">E007</span>                 <span class="nv">nop</span>
+ <span class="err">0040</span><span class="nf">E008</span>                 <span class="nv">nop</span>
+ <span class="err">0040</span><span class="nf">E009</span>                 <span class="nv">mov</span>     <span class="nb">esi</span><span class="p">,</span> <span class="nv">offset</span> <span class="nv">crypted_code</span><span class="o">-</span><span class="mi">4</span>
+ <span class="err">0040</span><span class="nf">E00E</span>                 <span class="nv">nop</span>
+ <span class="err">0040</span><span class="nf">E00F</span>                 <span class="nv">mov</span>     <span class="nb">edx</span><span class="p">,</span> <span class="mh">598h</span>
+ <span class="err">0040</span><span class="nf">E014</span>                 <span class="nv">nop</span>
+ <span class="err">0040</span><span class="nf">E015</span> <span class="nv">decrypt_loop</span><span class="p">:</span>   <span class="nv">push</span>    <span class="kt">dword</span> <span class="nv">ptr</span> <span class="p">[</span><span class="nb">edx</span><span class="o">+</span><span class="nb">esi</span><span class="p">]</span>
+ <span class="err">0040</span><span class="nf">E018</span>                 <span class="nv">xor</span>     <span class="p">[</span><span class="nb">esp</span><span class="p">],</span> <span class="nb">ecx</span>
+ <span class="err">0040</span><span class="nf">E01B</span>                 <span class="nv">pop</span>     <span class="kt">dword</span> <span class="nv">ptr</span> <span class="p">[</span><span class="nb">edx</span><span class="o">+</span><span class="nb">esi</span><span class="p">]</span>
+ <span class="err">0040</span><span class="nf">E01E</span>                 <span class="nv">nop</span>
+ <span class="err">0040</span><span class="nf">E01F</span>                 <span class="nv">sub</span>     <span class="nb">edx</span><span class="p">,</span> <span class="mi">2</span>
+ <span class="err">0040</span><span class="nf">E022</span>                 <span class="nv">sub</span>     <span class="nb">edx</span><span class="p">,</span> <span class="mi">2</span>
+ <span class="err">0040</span><span class="nf">E025</span>                 <span class="nv">nop</span>
+ <span class="err">0040</span><span class="nf">E026</span>                 <span class="nv">jnz</span>     <span class="nv">short</span> <span class="nv">decrypt_loop</span>
+ <span class="err">0040</span><span class="nf">E028</span> <span class="nv">crypted_code</span><span class="p">:</span>
+</code></pre></div></div>
+<p>После небольших изменений, расшифровщик вирусного кода будет выглядеть следующим образом:</p>
+<div class="language-nasm highlighter-rouge"><div class="highlight"><pre class="highlight"><code> <span class="err">0040</span><span class="nf">E000</span> <span class="nv">start</span><span class="p">:</span>          <span class="nv">call</span>    <span class="kc">$</span><span class="o">+</span><span class="mi">5</span>
+ <span class="err">0040</span><span class="nf">E005</span>                 <span class="nv">pop</span>     <span class="nb">ecx</span>                      <span class="c1">; ecx = 40E005h</span>
+ <span class="err">0040</span><span class="nf">E006</span>                 <span class="nv">sub</span>     <span class="nb">ecx</span><span class="p">,</span> <span class="mh">3D6796h</span>             <span class="c1">; 40E005h - 3D6796h = 3786F</span>
+ <span class="err">0040</span><span class="nf">E00C</span>                 <span class="nv">mov</span>     <span class="nb">esi</span><span class="p">,</span> <span class="nv">offset</span> <span class="nv">crypted_code</span><span class="o">-</span><span class="mi">4</span>
+ <span class="err">0040</span><span class="nf">E011</span>                 <span class="nv">mov</span>     <span class="nb">edx</span><span class="p">,</span> <span class="mh">598h</span>
+ <span class="err">0040</span><span class="nf">E016</span> <span class="nv">decrypt_loop</span><span class="p">:</span>   <span class="nv">push</span>    <span class="kt">dword</span> <span class="nv">ptr</span> <span class="p">[</span><span class="nb">edx</span><span class="o">+</span><span class="nb">esi</span><span class="p">]</span>
+ <span class="err">0040</span><span class="nf">E019</span>                 <span class="nv">xor</span>     <span class="p">[</span><span class="nb">esp</span><span class="p">],</span> <span class="nb">ecx</span>
+ <span class="err">0040</span><span class="nf">E01C</span>                 <span class="nv">pop</span>     <span class="kt">dword</span> <span class="nv">ptr</span> <span class="p">[</span><span class="nb">edx</span><span class="o">+</span><span class="nb">esi</span><span class="p">]</span>
+ <span class="err">0040</span><span class="nf">E01F</span>                 <span class="nv">sub</span>     <span class="nb">edx</span><span class="p">,</span> <span class="mi">2</span>
+ <span class="err">0040</span><span class="nf">E022</span>                 <span class="nv">sub</span>     <span class="nb">edx</span><span class="p">,</span> <span class="mi">2</span>
+ <span class="err">0040</span><span class="nf">E025</span>                 <span class="nv">nop</span>
+ <span class="err">0040</span><span class="nf">E026</span>                 <span class="nv">jnz</span>     <span class="nv">short</span> <span class="nv">decrypt_loop</span>
+ <span class="err">0040</span><span class="nf">E028</span> <span class="nv">crypted_code</span><span class="p">:</span>
+</code></pre></div></div>
+<p>Я думаю, суть изменений Вам понятна, ну а если нет, то я немного поясню.<br />
+Для расчета ключа (в данном случае он содержится в регистре <strong>ECX</strong>) будет использоваться текущее местоположение кода в памяти. В том случае, если оно будет отличаться от оригинала, вирусный код будет расшифрован неправильно и антивирус не обнаружит сигнатуру свойственную данному или любому другому вирусу.</p>
+
+<p>Но в том случае, если анализатор кода не обнаружит наличие конкретного вируса, в дело вступает эвристический анализатор. Если будут обнаружены особенности строения, свойственные исполняемым файлам, зараженным вирусами (например, если точка входа находится в последней секции и секция имеет атрибуты, позволяющие “запись”), эвристический анализатор может выдать подозрение о наличии в файле <strong>Win32</strong> - вируса. Но это нас не должно волновать, мы же тестируем эмуляторы.</p>
+
+<p>Проведенное тестирование показало, что обмануть не получается только эмуляторы антивирусов <strong>Doctor Web</strong> и <strong>NAV</strong>, остальные молчат как партизаны.</p>
+
+<h3 id="4-история-с-продолжением">4. История с продолжением</h3>
+
+<p>Ходит слух, что начальное значение регистра <strong>EAX</strong>, при загрузке всех win32 программ одинаковое. Этим значением является местоположение точки входа, в памяти. Я не проверял достоверность этой информации во всех версиях Windows, так что утверждать со 100% гарантией, насчет правдивости данной информации не могу. Но, так же, я не встречался со случаями, когда данное утверждение было неверным.</p>
+
+<p>Видоизменим расшифровщик вирусного кода, чтобы он принял следующий вид:</p>
+
+<div class="language-nasm highlighter-rouge"><div class="highlight"><pre class="highlight"><code> <span class="err">0040</span><span class="nf">E000</span> <span class="nv">start</span><span class="p">:</span>          <span class="nv">sub</span>     <span class="nb">eax</span><span class="p">,</span> <span class="mh">3D6791h</span>      <span class="c1">; 40E000 - 3D6791 = 3786F</span>
+ <span class="err">0040</span><span class="nf">E006</span>                 <span class="nv">mov</span>     <span class="nb">ecx</span><span class="p">,</span> <span class="nb">eax</span>
+ <span class="err">0040</span><span class="nf">E008</span>                 <span class="nv">nop</span>
+ <span class="err">0040</span><span class="nf">E009</span>                 <span class="nv">nop</span>
+ <span class="err">0040</span><span class="nf">E00A</span>                 <span class="nv">nop</span>
+ <span class="err">0040</span><span class="nf">E00B</span>                 <span class="nv">nop</span>
+ <span class="err">0040</span><span class="nf">E00C</span>                 <span class="nv">mov</span>     <span class="nb">esi</span><span class="p">,</span> <span class="nv">crypted_code</span><span class="o">-</span><span class="mi">4</span>
+ <span class="err">0040</span><span class="nf">E011</span>                 <span class="nv">mov</span>     <span class="nb">edx</span><span class="p">,</span> <span class="mh">598h</span>
+ <span class="err">0040</span><span class="nf">E016</span> <span class="nv">decrypt_loop</span><span class="p">:</span>   <span class="nv">push</span>    <span class="kt">dword</span> <span class="nv">ptr</span> <span class="p">[</span><span class="nb">edx</span><span class="o">+</span><span class="nb">esi</span><span class="p">]</span>
+ <span class="err">0040</span><span class="nf">E019</span>                 <span class="nv">xor</span>     <span class="p">[</span><span class="nb">esp</span><span class="p">],</span> <span class="nb">ecx</span>
+ <span class="err">0040</span><span class="nf">E01C</span>                 <span class="nv">pop</span>     <span class="kt">dword</span> <span class="nv">ptr</span> <span class="p">[</span><span class="nb">edx</span><span class="o">+</span><span class="nb">esi</span><span class="p">]</span>
+ <span class="err">0040</span><span class="nf">E01F</span>                 <span class="nv">sub</span>     <span class="nb">edx</span><span class="p">,</span> <span class="mi">2</span>
+ <span class="err">0040</span><span class="nf">E022</span>                 <span class="nv">sub</span>     <span class="nb">edx</span><span class="p">,</span> <span class="mi">2</span>
+ <span class="err">0040</span><span class="nf">E025</span>                 <span class="nv">nop</span>
+ <span class="err">0040</span><span class="nf">E026</span>                 <span class="nv">jnz</span>     <span class="nv">short</span> <span class="nv">decrypt_loop</span>
+ <span class="err">0040</span><span class="nf">E028</span> <span class="nv">crypted_code</span><span class="p">:</span>
+</code></pre></div></div>
+
+<p>Проведенный тест показал, что антивирусы, которые не попались на предыдущий трюк, вышли “сухими из воды” и на этот раз. Так же не удалось обмануть и “<em>народный антивирус</em>” - <strong>AVP</strong>. Это говорит о том, что перед процессом эмуляции win32 программ, все антивирусные программы устанавливают значение регистра <strong>EAX</strong>, равным точке входа в программу, но из других источников так же известно, что :</p>
+
+<blockquote>
+  <p>В <strong>EAX</strong> должен быть ноль, как результат вызова <strong>ntdll.NtSetInformationThread</strong>, после которого сразу вызывается точка входа модуля.</p>
+</blockquote>
+
+<p>Получается, что антивирусы неправильно эмулируют выполнение win32 программ? <strong>;)</strong></p>
+
+<h3 id="5-старые-песни-о-главном">5. Старые песни о главном</h3>
+
+<p>В далеком 2000 году, программистом, известным мировой общественности под псевдонимом <strong>Z0MBiE</strong>, была написана очень интересная статья, посвященная корректности “работы” эмуляторов, антивирусных программ <strong>Doctor Web</strong> и <strong>AVP</strong> с инструкциями <strong>div8</strong>/<strong>16</strong>/<strong>32</strong>, <strong>idiv8</strong>/<strong>16</strong>/<strong>32</strong>.</p>
+
+<p>В результате проведенного дизассемблирования, процедур эмуляторов, отвечающих за имитацию выполнения этих инструкций (прокомментированные листинги так же были приведены в этой статье), было доказано, что эмуляция инструкции <strong>idiv32</strong> (8/16/32) происходит неправильно в обеих программах.</p>
+
+<p>С момента публикации данной статьи прошло уже 4 года, но так как она не попала в широкую общественность, я решил проверить, исправили ли авторы данных программ ошибки, а за одно и посмотреть, как с процессом эмуляции данной инструкции справляются другие антивирусы.<br />
+Для тестирования была выбрана инструкция <strong>idiv32</strong>.<br />
+Если в процедуре имитации выполнения данной инструкции присутствует ошибка, то в зависимости от значений параметров (делимого и делителя), могут возникнуть следующие ситуации :</p>
+<ol>
+  <li>Будет неправильно подсчитан результат (частное и остаток от деления).</li>
+  <li>Неправильная проверка параметров, приведет к ошибке переполнения или деления на ноль.</li>
+</ol>
+
+<p>Для того, чтобы рассмотреть реакцию эмуляторов на различные значения параметров, была написана небольшая утилита (исходный текст доступен в примерах), которая создает файлы инфицированные <strong>win32/parite</strong>, с расшифровщиками вида :</p>
+<div class="language-nasm highlighter-rouge"><div class="highlight"><pre class="highlight"><code> <span class="c1">; в нашем случае:</span>
+ <span class="c1">;                    ( 599h ) &lt;= X &lt;= ((0FFFFFFFFh - 598h) / 3786Fh )</span>
+ <span class="c1">; (( 3786Fh * 599h ) + 598h ) &lt;= Y &lt;= ( 0FFFFFFFFh )</span>
+ <span class="c1">;  </span>
+ <span class="err">0040</span><span class="nf">E000</span> <span class="nv">start</span><span class="p">:</span>          <span class="nv">sub</span>     <span class="nb">edx</span><span class="p">,</span> <span class="nb">edx</span>
+ <span class="err">0040</span><span class="nf">E002</span>                 <span class="nv">mov</span>     <span class="nb">eax</span><span class="p">,</span> <span class="nv">Y</span>          <span class="c1">; Y = ( 3786Fh * X ) + 598h</span>
+ <span class="err">0040</span><span class="nf">E007</span>                 <span class="nv">mov</span>     <span class="nb">ecx</span><span class="p">,</span> <span class="nv">X</span>
+ <span class="err">0040</span><span class="nf">E00C</span>                 <span class="nv">idiv</span>    <span class="nb">ecx</span>             <span class="c1">; edx - остаток = 598h</span>
+ <span class="err">0040</span><span class="nf">E00E</span>                 <span class="nv">xchg</span>    <span class="nb">eax</span><span class="p">,</span> <span class="nb">ecx</span>        <span class="c1">; eax &lt;-&gt; ecx</span>
+ <span class="err">0040</span><span class="nf">E00F</span>                 <span class="nv">nop</span>
+ <span class="err">0040</span><span class="nf">E010</span>                 <span class="nv">mov</span>     <span class="nb">esi</span><span class="p">,</span> <span class="nv">offset</span> <span class="nv">crypted_code</span><span class="o">-</span><span class="mi">4</span>
+ <span class="err">0040</span><span class="nf">E015</span> <span class="nv">decrypt_loop</span><span class="p">:</span>   <span class="nv">push</span>    <span class="kt">dword</span> <span class="nv">ptr</span> <span class="p">[</span><span class="nb">edx</span><span class="o">+</span><span class="nb">esi</span><span class="p">]</span>
+ <span class="err">0040</span><span class="nf">E018</span>                 <span class="nv">xor</span>     <span class="p">[</span><span class="nb">esp</span><span class="p">],</span> <span class="nb">ecx</span>
+ <span class="err">0040</span><span class="nf">E01B</span>                 <span class="nv">pop</span>     <span class="kt">dword</span> <span class="nv">ptr</span> <span class="p">[</span><span class="nb">edx</span><span class="o">+</span><span class="nb">esi</span><span class="p">]</span>
+ <span class="err">0040</span><span class="nf">E01E</span>                 <span class="nv">nop</span>
+ <span class="err">0040</span><span class="nf">E01F</span>                 <span class="nv">sub</span>     <span class="nb">edx</span><span class="p">,</span> <span class="mi">2</span>
+ <span class="err">0040</span><span class="nf">E022</span>                 <span class="nv">sub</span>     <span class="nb">edx</span><span class="p">,</span> <span class="mi">2</span>
+ <span class="err">0040</span><span class="nf">E025</span>                 <span class="nv">nop</span>
+ <span class="err">0040</span><span class="nf">E026</span>                 <span class="nv">jnz</span>     <span class="nv">short</span> <span class="nv">decrypt_loop</span>
+ <span class="err">0040</span><span class="nf">E028</span> <span class="nv">crypted_code</span><span class="p">:</span>
+</code></pre></div></div>
+<p>Тест показал, что:</p>
+<ol>
+  <li>Антивирусы <strong>NAV</strong> и <strong>Doctor Web</strong> определяют наличие вируса в файлах, вне зависимости от значений параметров инструкции <strong>idiv32</strong>.</li>
+  <li><strong>Panda Antivirus</strong> и <strong>Stop!</strong> молчат как партизаны. Скорее всего, в этих антивирусах отсутствуют процедуры эмуляции данной инструкции или они реализованы с большим количеством ошибок.</li>
+  <li><strong>AVP</strong> правильно имитирует выполнение инструкции, в том случае, если делимое меньше 80000000h. С момента выхода статьи Z0MBiE прошло 4 года, но ошибка, так и не была исправлена, несмотря на то, что <em>он привел в статье правильный алгоритм, который можно было просто скопировать</em>.</li>
+</ol>
+
+<h3 id="6-против-лома-нет-приема-">6. Против лома нет приема …</h3>
+
+<p>Операционная система Windows произвела взаимовыгодный обмен прерываний (которые в Dos’е очень активно использовались, для обмана всех и вся) на функции API (Application Programming Interface).</p>
+
+<p>Допустим, что мы используем генератор полиморфных (раc) шифровщиков для защиты исполняемых файлов. Каждый из “защищаемых” файлов импортирует функции API из различных библиотек, а вся информация об импорте, содержится в исполняемом файле.<br />
+Для формирования вызова функции, необходимо знать:</p>
+<ol>
+  <li>Смещение, по которому (при загрузке программы) будет находиться реальный адрес функции в памяти.</li>
+  <li>Количество параметров использующихся при вызове функции API.</li>
+</ol>
+
+<p>Как Вы знаете, каждая из функций API, требует различных параметров для работы, которые должны быть загружены в стек. Помимо параметров, непосредственно используемых той или иной функцией, есть параметр, указывающий смещение, на которое будет передано управление после вызова функции.<br />
+Об этом параметре мало кто знает, потому что компиляторы генерируют вызовы функций следующим образом:</p>
+<div class="language-nasm highlighter-rouge"><div class="highlight"><pre class="highlight"><code>                <span class="nf">...</span>
+                <span class="nf">call</span> <span class="nv">_GetTickCount</span>
+  <span class="nl">continue:</span>     <span class="nf">...</span>
+ <span class="c1">;</span>
+ <span class="c1">; Смещение "xxxxxxxxh" указывает, на dword, который при загрузке программы</span>
+ <span class="c1">; в память, будет содержать точку входа в функцию GetTickCount</span>
+ <span class="c1">;</span>
+ <span class="nl">_GetTickCount:</span> <span class="nf">jmp</span>   <span class="kt">dword</span> <span class="nv">ptr</span> <span class="p">[</span><span class="nv">xxxxxxxxh</span><span class="p">]</span>
+</code></pre></div></div>
+<p>Инструкция <strong>CALL</strong> заносит в стек смещение (в данном случае “<strong>continue</strong>”) следующей инструкции, ну а затем <strong>JMP</strong> вызывает функцию (<strong>GetTickCount</strong>). Вызванный сервис использует необходимое количество параметров из стека, для выполнения своего назначения и предает управление на смещение, которое было загружено инструкцией <strong>CALL</strong>, в качестве последнего параметра.<br />
+Пример вызова функций в полиморфном расшифровщике:</p>
+<div class="language-nasm highlighter-rouge"><div class="highlight"><pre class="highlight"><code> <span class="c1">;</span>
+ <span class="c1">; пусть осуществляется обращение к функции использующей один параметр, например CloseHandle.</span>
+ <span class="c1">; ereg/value - любой 32-х битный регистр или значение.</span>
+ <span class="c1">;</span>
+ <span class="c1">; по смещению "xxxxxxxxh" расположено местоположение вызываемой функции API в памяти.</span>
+ <span class="c1">;</span>
+            <span class="nf">...</span> <span class="err">процесс</span> <span class="err">расшифровки</span> <span class="err">кода</span> <span class="nv">...</span>
+                <span class="nf">push</span>  <span class="nv">ereg</span><span class="o">/</span><span class="nv">value</span>
+                <span class="nf">push</span>  <span class="nv">offset</span> <span class="nv">continue</span>
+                <span class="nf">jmp</span>   <span class="kt">dword</span> <span class="nv">ptr</span> <span class="p">[</span><span class="nv">xxxxxxxxh</span><span class="p">]</span>               
+                <span class="nf">...</span>                                <span class="c1">; мусорные инструкции</span>
+                <span class="nf">ret</span>                                <span class="c1">; прощай эмулятор</span>
+                <span class="nf">...</span>
+  <span class="nl">continue:</span> <span class="nf">...</span> <span class="err">продолжение</span> <span class="err">процесса</span> <span class="err">расшифровки</span> <span class="nv">...</span>
+</code></pre></div></div>
+<p>Мы загрузили необходимое количество параметров (в данном случае 1), необходимых для работы функции и смещение, на которое будет передано управление. Результат работы вызванной функции <strong>CloseHandle</strong> нас не интересует вообще (следовательно и состояние параметров, кроме смещения, необходимого для возврата), главное, что в любом случае, после выполнения функции переход будет осуществлен к метке <strong>continue</strong>. “Под эмулятором”, переход произойдет только при выполнении инструкции <strong>ret</strong>./
+<em>Главное не использовать генерацию вызовов API функций, пишущих информацию по смещениям, указанных в параметрах.</em></p>
+
+<p>Теперь готовимся к тестированию на “живце”. Для вставки простейшей реализации трюка в расшифровщик нам понадобятся:</p>
+<ol>
+  <li>Утилита, генерирующая отчет о структуре секций импорта файлов формата PortableExecutables.</li>
+  <li>Win32 programmer’s reference - информация о функциях (API): описание действия, параметров и их количества.</li>
+</ol>
+
+<p>В списке импортируемых функций зараженной программы, значится <strong>GetCommandLineA</strong>. Это не может не радовать, так как эта функция не нуждается в параметрах, а в нашем случае (когда свободного места в расшифровщике мало) это очень важно. Кроме того, она не выполняет никаких “<em>вредных</em>” действий./
+При загрузке программы, информация о положении этого сервиса будет расположена по смещению 400000h (Image Base) + 630Eh.<br />
+Перед вставкой вызова функции <strong>GetCommandLineA</strong>, была изменена структура расшифровщика и произведена некоторая оптимизация.</p>
+<div class="language-nasm highlighter-rouge"><div class="highlight"><pre class="highlight"><code> <span class="err">0040</span><span class="nf">E000</span>                 <span class="nv">push</span>    <span class="nv">offset</span> <span class="nv">decrypt_start</span>
+ <span class="err">0040</span><span class="nf">E005</span>                 <span class="nv">jmp</span>     <span class="kt">dword</span> <span class="nv">ptr</span> <span class="p">[</span><span class="mh">4063E0h</span><span class="p">]</span>
+ <span class="err">0040</span><span class="nf">E00B</span>                 <span class="nv">retn</span>                             <span class="c1">; прощайте эмуляторы</span>
+ <span class="err">0040</span><span class="nf">E00C</span> <span class="nv">decrypt_start</span><span class="p">:</span>  <span class="nv">mov</span>     <span class="nb">esi</span><span class="p">,</span> <span class="nv">offset</span> <span class="nv">crypted_code</span><span class="o">-</span><span class="mi">4</span>
+ <span class="err">0040</span><span class="nf">E011</span>                 <span class="nv">mov</span>     <span class="nb">edx</span><span class="p">,</span> <span class="mh">598h</span>
+ <span class="err">0040</span><span class="nf">E016</span> <span class="nv">decrypt_loop</span><span class="p">:</span>   <span class="nv">push</span>    <span class="kt">dword</span> <span class="nv">ptr</span> <span class="p">[</span><span class="nb">edx</span><span class="o">+</span><span class="nb">esi</span><span class="p">]</span>
+ <span class="err">0040</span><span class="nf">E019</span>                 <span class="nv">xor</span>     <span class="kt">dword</span> <span class="nv">ptr</span> <span class="p">[</span><span class="nb">esp</span><span class="p">],</span> <span class="mh">3786Fh</span>
+ <span class="err">0040</span><span class="nf">E020</span>                 <span class="nv">pop</span>     <span class="kt">dword</span> <span class="nv">ptr</span> <span class="p">[</span><span class="nb">edx</span><span class="o">+</span><span class="nb">esi</span><span class="p">]</span>
+ <span class="err">0040</span><span class="nf">E023</span>                 <span class="nv">sub</span>     <span class="nb">edx</span><span class="p">,</span> <span class="mi">4</span>
+ <span class="err">0040</span><span class="nf">E026</span>                 <span class="nv">jnz</span>     <span class="nv">short</span> <span class="nv">decrypt_loop</span>
+ <span class="err">0040</span><span class="nf">E028</span> <span class="nv">crypted_code</span><span class="p">:</span>
+</code></pre></div></div>
+<p>Как я и ожидал, ни один из антивирусов не определил наличие вируса <strong>win32/parite</strong> в зараженных файлах, измененных таким образом.</p>
+
+<h3 id="7-заключение">7. Заключение</h3>
+<p>Настало время подвести итоги тестирования:</p>
+<ul>
+  <li><strong>Panda Antivirus</strong> известный тем, что может вылечить то, что другие даже не берутся (взять тот же самый <strong>win32/kriz</strong>), показал самые ужасающие результаты. Эмулятор просто нулевой.</li>
+  <li>Об эмуляторе <strong>Norton Antivirus</strong> ходит дурная слава, несмотря на это он показал очень высокие результаты.</li>
+  <li>По качеству, эмулятор антивируса <strong>Doctor Web</strong> показал результаты аналогичные <strong>NAV</strong>, но скорость проверки файлов на порядок выше.</li>
+</ul>
+
+<table>
+  <thead>
+    <tr>
+      <th style="text-align: left">AV name</th>
+      <th style="text-align: left">delta value</th>
+      <th style="text-align: left">начальное значение eax</th>
+      <th style="text-align: left">idiv32</th>
+      <th style="text-align: left">вызов функций API</th>
+      <th style="text-align: left">оценка</th>
+      <th> </th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td style="text-align: left">Doctor Web 4.30a</td>
+      <td style="text-align: left">+</td>
+      <td style="text-align: left">+</td>
+      <td style="text-align: left">+</td>
+      <td style="text-align: left">-</td>
+      <td style="text-align: left">3</td>
+      <td> </td>
+    </tr>
+    <tr>
+      <td style="text-align: left">Norton Antivirus 2004</td>
+      <td style="text-align: left">+</td>
+      <td style="text-align: left">+</td>
+      <td style="text-align: left">+</td>
+      <td style="text-align: left">-</td>
+      <td style="text-align: left">3</td>
+      <td> </td>
+    </tr>
+    <tr>
+      <td style="text-align: left">Kaspersky Anti-virus (AVP) v3.5.133.0</td>
+      <td style="text-align: left">-</td>
+      <td style="text-align: left">+</td>
+      <td style="text-align: left">+ / -</td>
+      <td style="text-align: left">-</td>
+      <td style="text-align: left">1+</td>
+      <td> </td>
+    </tr>
+    <tr>
+      <td style="text-align: left">Stop! Scanner 5.0</td>
+      <td style="text-align: left">-</td>
+      <td style="text-align: left">-</td>
+      <td style="text-align: left">-</td>
+      <td style="text-align: left">-</td>
+      <td style="text-align: left">-</td>
+      <td>0</td>
+    </tr>
+    <tr>
+      <td style="text-align: left">Panda Antivirus Titanium 2004</td>
+      <td style="text-align: left">-</td>
+      <td style="text-align: left">-</td>
+      <td style="text-align: left">-</td>
+      <td style="text-align: left">-</td>
+      <td style="text-align: left">0</td>
+      <td> </td>
+    </tr>
+  </tbody>
+</table>
+
+<p>К статье прилагается <a href="/assets/downloads/2004-04-06/examples.zip">архив</a> (пароль 1) содержащий:</p>
+<ul>
+  <li>Примеры реализации каждого из трюков, на которых производилось тестирование (определяются антивирусами как зараженные вирусом, но на самом деле абсолютно неработоспособны и опасности не представляют).</li>
+  <li>Утилиту для получения отчета о структуре исполняемых файлов PE (with source).</li>
+  <li>Исходные тексты генератора файлов, демонстрирующих трюк с инструкцией <strong>idiv32</strong>.</li>
+</ul>
+
+<p><strong>Внимание</strong>: вирусный код обрезан таким образом, что он не способен распространяться. В оригинале, вирус не содержит никаких вредоносных компонент. Не смотря на это, автор статьи и администрация сайта не несет ответственности за последствия, которые имели место, как следствие использования файлов из этого архива. Вы используете все вышеперечисленное на свой страх и риск.</p>
+
+<p>Чтобы там не говорили, а антивирусные эмуляторы достаточно тяжело обмануть, действуя “вслепую” (предполагая). Необходимо дизассемблировать и разбирать алгоритмы их работы, но для этого требуется очень высокий уровень знаний, которым обладают единицы.</p>
+
+<p>Огромное спасибо всем членам команды <strong>UINC</strong> за помощь в работе над статьей.</p>
+
+<p>Мой почтовый ящик всегда открыт для эмоций, критики, советов (конструктивных и нет) и т.д.</p>
+
+<p>Заинтересовавшимся лицам рекомендуются к прочтению:</p>
+<ol>
+  <li>Формат исполняемых файлов PortableExecutables, Hard Wisdom ‘1999</li>
+  <li>Блеск и нищета кодоэмуляторов, Земский Фершал N3 ‘1999</li>
+  <li>И. Данилов vs В. Богданов (Dr. Web vs AVP), Z0MBiE ‘2000</li>
+  <li><a href="/antivirus/emulation/assembly/code-emulation-techniques/">Основы разработки эмуляторов кода</a>, Andrei Agafonov ‘2004</li>
+</ol>
+
+<p>Выпущена: 6 апреля 2004<br />
+Автор: <a href="https://github.com/andrei-ag/">Andrei Agafonov</a><br />
+Рецензирование: Команда UinC.RU, отдельное спасибо Dr.Golova<br />
+Источник: <a href="https://web.archive.org/web/20051215213447/http://uinc.ru:80/articles/48/">http://www.uinc.ru</a></p>
+
+        
+      </section>
+
+      <footer class="page__meta">
+        
+        
+  
+
+
+  
+
+  <p class="page__taxonomy">
+    <strong><i class="fas fa-fw fa-tags" aria-hidden="true"></i> Tags: </strong>
+    <span itemprop="keywords">
+    
+      <a href="/tags/#anti-emulation" class="page__taxonomy-item p-category" rel="tag">anti-emulation</a><span class="sep">, </span>
+    
+      <a href="/tags/#api-tricks" class="page__taxonomy-item p-category" rel="tag">api-tricks</a><span class="sep">, </span>
+    
+      <a href="/tags/#avp" class="page__taxonomy-item p-category" rel="tag">avp</a><span class="sep">, </span>
+    
+      <a href="/tags/#drweb" class="page__taxonomy-item p-category" rel="tag">drweb</a><span class="sep">, </span>
+    
+      <a href="/tags/#eax" class="page__taxonomy-item p-category" rel="tag">eax</a><span class="sep">, </span>
+    
+      <a href="/tags/#idiv32" class="page__taxonomy-item p-category" rel="tag">idiv32</a><span class="sep">, </span>
+    
+      <a href="/tags/#norton" class="page__taxonomy-item p-category" rel="tag">norton</a><span class="sep">, </span>
+    
+      <a href="/tags/#ntsetinformationthread" class="page__taxonomy-item p-category" rel="tag">ntSetInformationThread</a><span class="sep">, </span>
+    
+      <a href="/tags/#panda" class="page__taxonomy-item p-category" rel="tag">panda</a>
+    
+    </span>
+  </p>
+
+
+
+
+  
+
+
+  
+
+  <p class="page__taxonomy">
+    <strong><i class="fas fa-fw fa-folder-open" aria-hidden="true"></i> Categories: </strong>
+    <span itemprop="keywords">
+    
+      <a href="/categories/#antivirus" class="page__taxonomy-item p-category" rel="tag">antivirus</a><span class="sep">, </span>
+    
+      <a href="/categories/#assembly" class="page__taxonomy-item p-category" rel="tag">assembly</a><span class="sep">, </span>
+    
+      <a href="/categories/#emulation" class="page__taxonomy-item p-category" rel="tag">emulation</a>
+    
+    </span>
+  </p>
+
+
+        
+
+  <p class="page__date"><strong><i class="fas fa-fw fa-calendar-alt" aria-hidden="true"></i> Updated:</strong> <time class="dt-published" datetime="2004-04-06T00:00:00+03:00">April 6, 2004</time></p>
+
+      </footer>
+
+      
+
+      
+  <nav class="pagination">
+    
+      <a href="/antivirus/code-analysis/assembly/antivirus-code-analysis/" class="pagination--pager" title="Анализаторы кода в антивирусах
+">Previous</a>
+    
+    
+      <a href="#" class="pagination--pager disabled">Next</a>
+    
+  </nav>
+
+    </div>
+
+    
+  </article>
+
+  
+  
+</div>
+
+      
+    </div>
+
+    
+      <div class="search-content">
+        <div class="search-content__inner-wrap"><form class="search-content__form" onkeydown="return event.key != 'Enter';" role="search">
+    <label class="sr-only" for="search">
+      Enter your search term...
+    </label>
+    <input type="search" id="search" class="search-input" tabindex="-1" placeholder="Enter your search term..." />
+  </form>
+  <div id="results" class="results"></div></div>
+
+      </div>
+    
+
+    <div id="footer" class="page__footer">
+      <footer>
+        <!-- start custom footer snippets -->
+
+<!-- end custom footer snippets -->
+        <div class="page__footer-follow">
+  <ul class="social-icons">
+    
+
+    
+      
+        
+          <li><a href="https://github.com/andrei-ag" rel="nofollow noopener noreferrer"><i class="fab fa-fw fa-github" aria-hidden="true"></i> GitHub</a></li>
+        
+      
+    
+
+    
+      <li><a href="/feed.xml"><i class="fas fa-fw fa-rss-square" aria-hidden="true"></i> Feed</a></li>
+    
+  </ul>
+</div>
+
+<div class="page__footer-copyright">&copy; 2026 <a href="http://localhost:4000">andrei-ag :: code execution & antivirus internals</a>. Powered by <a href="https://jekyllrb.com" rel="nofollow">Jekyll</a> &amp; <a href="https://mademistakes.com/work/minimal-mistakes-jekyll-theme/" rel="nofollow">Minimal Mistakes</a>.</div>
+
+      </footer>
+    </div>
+
+    
+  <script src="/assets/js/main.min.js"></script>
+
+
+
+
+<script src="/assets/js/lunr/lunr.min.js"></script>
+<script src="/assets/js/lunr/lunr-store.js"></script>
+<script src="/assets/js/lunr/lunr-en.js"></script>
+
+
+
+
+
+
+  </body>
+</html>
