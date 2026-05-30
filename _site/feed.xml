@@ -1,4 +1,129 @@
-<?xml version="1.0" encoding="utf-8"?><feed xmlns="http://www.w3.org/2005/Atom" xml:lang="ruen"><generator uri="https://jekyllrb.com/" version="3.10.0">Jekyll</generator><link href="http://localhost:4000/feed.xml" rel="self" type="application/atom+xml" /><link href="http://localhost:4000/" rel="alternate" type="text/html" hreflang="ruen" /><updated>2026-05-30T10:50:49+03:00</updated><id>http://localhost:4000/feed.xml</id><title type="html">andrei-ag :: code execution &amp;amp; antivirus internals</title><subtitle>Эмуляция кода, анализаторы, антивирусные технологии и низкоуровневое программирование</subtitle><author><name>Andrei Agafonov</name></author><entry xml:lang="ru"><title type="html">Уязвимости эмуляторов кода</title><link href="http://localhost:4000/antivirus/emulation/assembly/antivirus-anti-emulation-tricks/" rel="alternate" type="text/html" title="Уязвимости эмуляторов кода" /><published>2004-04-06T00:00:00+03:00</published><updated>2004-04-06T00:00:00+03:00</updated><id>http://localhost:4000/antivirus/emulation/assembly/antivirus-anti-emulation-tricks</id><content type="html" xml:base="http://localhost:4000/antivirus/emulation/assembly/antivirus-anti-emulation-tricks/"><![CDATA[<h3 id="1-вступление">1. Вступление</h3>
+<?xml version="1.0" encoding="utf-8"?><feed xmlns="http://www.w3.org/2005/Atom" xml:lang="ruen"><generator uri="https://jekyllrb.com/" version="3.10.0">Jekyll</generator><link href="http://localhost:4000/feed.xml" rel="self" type="application/atom+xml" /><link href="http://localhost:4000/" rel="alternate" type="text/html" hreflang="ruen" /><updated>2026-05-30T12:59:58+03:00</updated><id>http://localhost:4000/feed.xml</id><title type="html">andrei-ag :: code execution &amp;amp; antivirus internals</title><subtitle>Эмуляция кода, анализаторы, антивирусные технологии и низкоуровневое программирование</subtitle><author><name>Andrei Agafonov</name></author><entry xml:lang="ru"><title type="html">Explosion antivirus (десятая версия)</title><link href="http://localhost:4000/antivirus/emulation/assembly/explosion-av-010/" rel="alternate" type="text/html" title="Explosion antivirus (десятая версия)" /><published>2004-04-17T20:48:11+03:00</published><updated>2004-04-17T20:48:11+03:00</updated><id>http://localhost:4000/antivirus/emulation/assembly/explosion-av-010</id><content type="html" xml:base="http://localhost:4000/antivirus/emulation/assembly/explosion-av-010/"><![CDATA[<h1 id="о-программе">О программе</h1>
+
+<p>Программа <em>Explosion Antivirus</em>, предназначена для демонстрации способов реализации различных антивирусных технологий и является, так называемым, учебным пособием для системных программистов.<br />
+Основная цель — показать возможность создания эффективного антивируса с открытым исходным кодом, использующего методы эмуляции, которые тогда применялись только в коммерческих продуктах (Kaspersky, Dr.Web).</p>
+
+<p>В комплект каждой версии программы, входят полные исходные тексты (на языке ассемблера под операционую систему win32), с максимальным количеством комментариев на русском языке.</p>
+
+<p><a href="/assets/images/exp_box_big1.jpg"><img src="/assets/images/exp_box_big1.thumbnail.jpg" alt="Xplosion’s cover art" /></a></p>
+
+<h1 id="что-нового-по-сравнению-с-версией-001">Что нового по сравнению с версией 001</h1>
+
+<h2 id="эмуляция-программного-кода">Эмуляция программного кода</h2>
+
+<p>Реализована новая версия эмулятора кода, позволяющая определять наличие полиморфных вирусов:</p>
+<ul>
+  <li><a href="https://web.archive.org/web/20260211011414/https://www.f-secure.com/v-descs/marburg.shtml">W95.Marburg</a></li>
+  <li><a href="https://web.archive.org/web/20260219001517/http://virus.wikidot.com/kriz">W32.Krized</a></li>
+</ul>
+
+<p><strong>Защита от “вечных циклов”</strong></p>
+<ul>
+  <li>Эмулятор автоматически завершает работу через 3 секунды (Используется GetTickCount для контроля времени выполнения)</li>
+</ul>
+
+<p><strong>Улучшенный анализатор delta-offset</strong></p>
+<ul>
+  <li>Увеличен счётчик инструкций с 4 до 8 (более надёжное обнаружение процедур вычисления разницы смещений)</li>
+</ul>
+
+<p><strong>Новые эмулируемые инструкции (+40)</strong></p>
+
+<table>
+  <thead>
+    <tr>
+      <th style="text-align: left">Инструкции</th>
+      <th style="text-align: left">Описание</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td style="text-align: left">stosb/stosw/stosd</td>
+      <td style="text-align: left">Строковые записи</td>
+    </tr>
+    <tr>
+      <td style="text-align: left">lodsb/lodsw/lodsd</td>
+      <td style="text-align: left">Строковые чтения</td>
+    </tr>
+    <tr>
+      <td style="text-align: left">movsx/movzx</td>
+      <td style="text-align: left">Расширение со знаком/без</td>
+    </tr>
+    <tr>
+      <td style="text-align: left">xchg eax, reg</td>
+      <td style="text-align: left">Обмен с EAX</td>
+    </tr>
+    <tr>
+      <td style="text-align: left">push ds/push cs</td>
+      <td style="text-align: left">Сегментные регистры</td>
+    </tr>
+    <tr>
+      <td style="text-align: left">cmc/stc/cli/sti</td>
+      <td style="text-align: left">Флаговые инструкции</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="лечение-заражённых-файлов">Лечение заражённых файлов</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th style="text-align: left">Вирус</th>
+      <th style="text-align: left">Методика лечения</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td style="text-align: left">Krized</td>
+      <td style="text-align: left">Очищает 16 адресов API из KERNEL32.DLL, восстанавливает PE-заголовок</td>
+    </tr>
+    <tr>
+      <td style="text-align: left">Marburg</td>
+      <td style="text-align: left">Пересчитывает SizeOfImage, удаляет 256 байт из EntryPoint</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>p.s. Krized не лечится большей частью коммерческих антивирусов.</p>
+
+<h2 id="сервисные-функции">Сервисные функции</h2>
+
+<p><strong>Функция сканирования всех жестких дисков</strong></p>
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>explosion.exe /*
+</code></pre></div></div>
+
+<p><strong>Создание файлов отчета (xplosion.rep), о результатах проведенного сканирования</strong> в двух режимах:</p>
+<ul>
+  <li>/ra — дописать в существующий отчёт</li>
+  <li>/rc — создать новый отчёт</li>
+</ul>
+
+<p><strong>Отладочный режим</strong> (/d)</p>
+<ul>
+  <li>Создание дампа проэмулированного кода в файл *.dmp</li>
+  <li>Позволяет анализировать точку остановки эмулятора</li>
+</ul>
+
+<h1 id="скачать">Скачать</h1>
+
+<ul>
+  <li><a href="https://www.sac.sk/download/avir/xpl_010.zip">Slovak Antivirus Center</a></li>
+  <li><a href="https://github.com/andrei-ag/xpl_av/releases/tag/v0.1.0">GitHub</a></li>
+</ul>
+
+<h1 id="дополнительные-материалы">Дополнительные материалы</h1>
+
+<p>При разработке программы использовались следующие материалы:</p>
+<ol>
+  <li><em>Hard Wisdom</em> - Формат исполняемых файлов PortableExecutables (версия 1.3.0 от 6 августа, 1999г).</li>
+  <li><em>Климентьев К.Е.</em> aka <em>DrMad</em> - Данные формата файлов PE (использованные исходные тексты программы <em>DullPro</em>).</li>
+  <li><em>Hayras</em> - Функции работы с консолью.</li>
+</ol>
+
+<p>Хочется поблагодарить вышеуказанных людей!</p>
+
+<p>Автор: Andrei Agafonov</p>]]></content><author><name>Andrei Agafonov</name></author><category term="antivirus" /><category term="emulation" /><category term="assembly" /><category term="explosion-antivirus" /><summary type="html"><![CDATA[Исходные коды Explosion antivirus версии 010]]></summary></entry><entry xml:lang="ru"><title type="html">Уязвимости эмуляторов кода</title><link href="http://localhost:4000/antivirus/emulation/assembly/antivirus-anti-emulation-tricks/" rel="alternate" type="text/html" title="Уязвимости эмуляторов кода" /><published>2004-04-06T00:00:00+03:00</published><updated>2004-04-06T00:00:00+03:00</updated><id>http://localhost:4000/antivirus/emulation/assembly/antivirus-anti-emulation-tricks</id><content type="html" xml:base="http://localhost:4000/antivirus/emulation/assembly/antivirus-anti-emulation-tricks/"><![CDATA[<h3 id="1-вступление">1. Вступление</h3>
 <p>Генераторы полиморфных шифровщиков/расшифровщиков очень часто используются для защиты исполняемых файлов (полностью либо частично) и во многих компьютерных вирусах. Для того, что бы усложнить процесс создания утилит, предназначенных для автоматического снятия защит такого рода, и обнаружения вирусов используются различные алгоритмы, называемые <em>анти-эмуляционными трюками</em>. Этим алгоритмам и будет посвящена данная статья.</p>
 
 <p>Тестирование трюков будет производиться на антивирусных программах, которые, бесспорно, содержат самые совершенные реализации эмуляторов кода. Таким образом, мы оценим качество эмуляторов следующих антивирусов:</p>
@@ -1475,4 +1600,50 @@
 <p>Выпущена: 24 февраля 2004<br />
 Автор: <a href="https://github.com/andrei-ag/">Andrei Agafonov</a><br />
 Рецензирование: Команда UinC.RU, отдельное спасибо Dr.Golova<br />
-Источник: <a href="https://web.archive.org/web/20051215213447/http://uinc.ru:80/articles/45/">http://www.uinc.ru</a></p>]]></content><author><name>Andrei Agafonov</name></author><category term="antivirus" /><category term="code-analysis" /><category term="assembly" /><category term="signatures" /><category term="heuristic" /><category term="delta-value" /><category term="upx" /><category term="pe-file" /><category term="idiv32" /><summary type="html"><![CDATA[Статья о работе анализатора кода: инициализация, эвристический анализ, поиск вирусных сигнатур и «охота» за процедурами вычисления delta value.]]></summary></entry></feed>
+Источник: <a href="https://web.archive.org/web/20051215213447/http://uinc.ru:80/articles/45/">http://www.uinc.ru</a></p>]]></content><author><name>Andrei Agafonov</name></author><category term="antivirus" /><category term="code-analysis" /><category term="assembly" /><category term="signatures" /><category term="heuristic" /><category term="delta-value" /><category term="upx" /><category term="pe-file" /><category term="idiv32" /><summary type="html"><![CDATA[Статья о работе анализатора кода: инициализация, эвристический анализ, поиск вирусных сигнатур и «охота» за процедурами вычисления delta value.]]></summary></entry><entry xml:lang="ru"><title type="html">Explosion antivirus (первая версия)</title><link href="http://localhost:4000/antivirus/emulation/assembly/explosion-av-001/" rel="alternate" type="text/html" title="Explosion antivirus (первая версия)" /><published>2004-02-15T00:00:00+03:00</published><updated>2004-02-15T00:00:00+03:00</updated><id>http://localhost:4000/antivirus/emulation/assembly/explosion-av-001</id><content type="html" xml:base="http://localhost:4000/antivirus/emulation/assembly/explosion-av-001/"><![CDATA[<h1 id="о-программе">О программе</h1>
+
+<p>Программа <em>Explosion Antivirus</em>, предназначена для демонстрации способов реализации различных антивирусных технологий и является, так называемым, учебным пособием для системных программистов.<br />
+Основная цель — показать возможность создания эффективного антивируса с открытым исходным кодом, использующего методы эмуляции, которые тогда применялись только в коммерческих продуктах (Kaspersky, Dr.Web).</p>
+
+<p>В комплект каждой версии программы, входят полные исходные тексты (на языке ассемблера под операционую систему win32), с максимальным количеством комментариев на русском языке.</p>
+
+<p><a href="/assets/images/exp_box_big1.jpg"><img src="/assets/images/exp_box_big1.thumbnail.jpg" alt="Xplosion’s cover art" /></a></p>
+
+<h1 id="ключевые-возможности">Ключевые возможности</h1>
+
+<h2 id="эмуляция-программного-кода">Эмуляция программного кода</h2>
+
+<ul>
+  <li>Полноценный интерпретатор x86-инструкций (поддержка ~70 инструкций)</li>
+  <li>Создание изолированной виртуальной среды (т.н. “песочницы”)</li>
+  <li>Эмуляция стека и регистров (EAX, ECX, EDX, EBX, ESP, EBP, ESI, EDI)</li>
+  <li>Безопасное выполнение потенциально опасных инструкций</li>
+</ul>
+
+<p>Эмулятор кода позволяет определять наличие полиморфных и щифрованных вирусов в частности <a href="https://web.archive.org/web/20190818222125/https://threats.kaspersky.com/ru/threat/Virus.Win32.Parite/">Win32.Parite</a>, и производить проверку файлов упакованных утилитой UPX на наличие известных программе вирусов (для обнаружения Win32.Mydoom.32768)</p>
+
+<h2 id="обнаружение-вирусов">Обнаружение вирусов</h2>
+
+<p>База сигнатур на вирусы (в т.ч. поддержка масок в сигнатурах для полиморфных вирусов):</p>
+<ul>
+  <li><a href="https://web.archive.org/web/20190818222125/https://threats.kaspersky.com/ru/threat/Virus.Win32.Parite/">Win32.Parite</a></li>
+  <li><a href="https://web.archive.org/web/20190716001351/https://securelist.ru/laboratoriya-kasperskogo-o-novom-viru/4342/">Win32.Funlove [4099]</a></li>
+  <li><a href="https://web.archive.org/web/20190716000019/https://securelist.ru/worm-qaz-setevoj-virus-cherv/4678/">Worm.Qaz</a></li>
+  <li>Win32.Mydoom.32768</li>
+</ul>
+
+<h2 id="лечение-заражённых-файлов">Лечение заражённых файлов</h2>
+
+<ul>
+  <li>Восстановление PE-заголовка для Parite</li>
+  <li>Удаление вирусного тела для Funlove</li>
+</ul>
+
+<h1 id="скачать">Скачать</h1>
+
+<ul>
+  <li><a href="https://www.sac.sk/download/avir/explo001.zip">Slovak Antivirus Center</a></li>
+  <li><a href="https://github.com/andrei-ag/xpl_av/releases/tag/v0.0.1">GitHub</a></li>
+</ul>
+
+<p>Автор: Andrei Agafonov</p>]]></content><author><name>Andrei Agafonov</name></author><category term="antivirus" /><category term="emulation" /><category term="assembly" /><category term="explosion-antivirus" /><summary type="html"><![CDATA[Исходные коды Explosion antivirus версии 001]]></summary></entry></feed>
